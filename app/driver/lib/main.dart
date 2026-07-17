@@ -10,18 +10,23 @@ import 'package:geocoding/geocoding.dart' as geocoding;
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'config.dart';
 import 'login_page.dart';
 
-const backendBaseUrl = 'http://192.168.24.118:3000';
+String get backendBaseUrl => AppConfig.apiBase;
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
-  log('Background FCM message received: ${message.messageId}', name: 'driver_app');
+  log(
+    'Background FCM message received: ${message.messageId}',
+    name: 'driver_app',
+  );
 }
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+  await AppConfig.load();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   log('Driver app started', name: 'driver_app');
   runApp(const DriverApp());
@@ -71,16 +76,32 @@ class _DriverHomePageState extends State<DriverHomePage> {
   String _address = '';
   bool _loading = false;
   bool _sendingLocation = false;
+  bool _routing = false;
   String? _statusMessage;
   final MapController _mapController = MapController();
   StreamSubscription<RemoteMessage>? _fcmSubscription;
+  Timer? _gpsRefreshTimer;
+  Timer? _heartbeatTimer;
+  List<LatLng> _routePoints = <LatLng>[];
+  LatLng? _destinationPoint;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _determinePosition());
+    _gpsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!mounted) return;
+      _determinePosition();
+    });
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (!mounted) return;
+      _sendHeartbeat();
+    });
     _fcmSubscription = FirebaseMessaging.onMessage.listen((message) {
-      log('Foreground FCM message received: ${message.messageId}', name: 'driver_app');
+      log(
+        'Foreground FCM message received: ${message.messageId}',
+        name: 'driver_app',
+      );
       final notif = message.notification;
       final title = notif?.title ?? message.data['title'] ?? 'Thông báo';
       final body = notif?.body ?? message.data['body'] ?? '';
@@ -99,16 +120,31 @@ class _DriverHomePageState extends State<DriverHomePage> {
         details.add('Pickup: $lat, $lng');
       }
       final contentText = [if (body.isNotEmpty) body, ...details].join('\n');
+      final pickupLat = double.tryParse(lat ?? '');
+      final pickupLng = double.tryParse(lng ?? '');
       if (!mounted) return;
       showDialog<void>(
         context: context,
         builder: (context) => AlertDialog(
           title: Text(title),
-          content: Text(contentText.isNotEmpty ? contentText : 'You have a new message'),
+          content: Text(
+            contentText.isNotEmpty ? contentText : 'You have a new message',
+          ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Đóng'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                if (pickupLat != null && pickupLng != null) {
+                  _handleTripAccept(
+                    pickupLat: pickupLat,
+                    pickupLng: pickupLng,
+                    tripId: tripId,
+                  );
+                } else {
+                  _showSnack('Không thể đọc tọa độ chuyến từ thông báo.');
+                }
+              },
+              child: const Text('Nhận chuyến'),
             ),
           ],
         ),
@@ -118,6 +154,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
   @override
   void dispose() {
+    _gpsRefreshTimer?.cancel();
+    _heartbeatTimer?.cancel();
     _fcmSubscription?.cancel();
     super.dispose();
   }
@@ -159,8 +197,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
         'GPS position resolved: ${pos.latitude}, ${pos.longitude}',
         name: 'driver_app',
       );
-      final placemarks = await geocoding.Geocoding()
-          .placemarkFromCoordinates(pos.latitude, pos.longitude);
+      final placemarks = await geocoding.Geocoding().placemarkFromCoordinates(
+        pos.latitude,
+        pos.longitude,
+      );
       final address = placemarks.isNotEmpty
           ? [
               placemarks.first.name,
@@ -183,6 +223,28 @@ class _DriverHomePageState extends State<DriverHomePage> {
       _showSnack('Error getting location: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _sendHeartbeat() async {
+    if (_position == null || widget.driverId.isEmpty) return;
+    try {
+      final uri = Uri.parse(
+        '$backendBaseUrl/api/drivers/${widget.driverId}/heartbeat',
+      );
+      await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'status': 'AVAILABLE',
+              'lat': _position!.latitude,
+              'lng': _position!.longitude,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (e) {
+      log('Heartbeat failed: $e', name: 'driver_app');
     }
   }
 
@@ -245,11 +307,141 @@ class _DriverHomePageState extends State<DriverHomePage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
+  Future<void> _handleTripAccept({
+    required double pickupLat,
+    required double pickupLng,
+    String? tripId,
+  }) async {
+    if (_position == null) {
+      _showSnack('Chưa có vị trí GPS. Hãy lấy GPS trước khi nhận chuyến.');
+      return;
+    }
+
+    if (_routing) return;
+
+    setState(() {
+      _routing = true;
+      _statusMessage = 'Đang xử lý chuyến...';
+    });
+
+    try {
+      if (tripId == null || tripId.isEmpty) {
+        throw Exception('Thiếu tripId trong thông báo');
+      }
+
+      final updateUri = Uri.parse('$backendBaseUrl/api/trips/$tripId');
+      final updateResponse = await http
+          .put(
+            updateUri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'driverId': widget.driverId, 'status': 'ACCEPT'}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+      if (updateResponse.statusCode != 200) {
+        throw Exception(
+          'Trip update failed with status ${updateResponse.statusCode}: ${updateResponse.body}',
+        );
+      }
+
+      log('Trip $tripId updated to ongoing', name: 'driver_app');
+
+      final uri = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/${_position!.longitude},${_position!.latitude};$pickupLng,$pickupLat?overview=full&geometries=geojson',
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+      if (!mounted) return;
+
+      if (response.statusCode != 200) {
+        throw Exception(
+          'Routing failed with status ${response.statusCode}: ${response.body}',
+        );
+      }
+
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final routes = body['routes'] as List<dynamic>?;
+      if (routes == null || routes.isEmpty) {
+        throw Exception('No route found');
+      }
+
+      final geometry = routes.first as Map<String, dynamic>?;
+      final coords = geometry?['geometry']?['coordinates'] as List<dynamic>?;
+      if (coords == null || coords.isEmpty) {
+        throw Exception('Route geometry is empty');
+      }
+
+      final points = coords.map<LatLng>((item) {
+        final coord = item as List<dynamic>;
+        return LatLng(coord[1] as double, coord[0] as double);
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _routePoints = points;
+        _destinationPoint = LatLng(pickupLat, pickupLng);
+        _statusMessage = 'Đã nhận chuyến và vẽ tuyến đường tới điểm đón';
+      });
+
+      if (points.isNotEmpty) {
+        final latSum = points.fold<double>(
+          0,
+          (sum, point) => sum + point.latitude,
+        );
+        final lngSum = points.fold<double>(
+          0,
+          (sum, point) => sum + point.longitude,
+        );
+        final center = LatLng(latSum / points.length, lngSum / points.length);
+        _mapController.move(center, 13);
+      }
+    } catch (e) {
+      log('Route calculation failed: $e', name: 'driver_app');
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Không thể tạo tuyến: $e');
+      _showSnack('Không thể tạo tuyến: $e');
+    } finally {
+      if (mounted) setState(() => _routing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final center = _position != null
+    final center = _routePoints.isNotEmpty
+        ? LatLng(
+            _routePoints.fold<double>(0, (sum, point) => sum + point.latitude) /
+                _routePoints.length,
+            _routePoints.fold<double>(
+                  0,
+                  (sum, point) => sum + point.longitude,
+                ) /
+                _routePoints.length,
+          )
+        : _position != null
         ? LatLng(_position!.latitude, _position!.longitude)
         : LatLng(10.8231, 106.6297);
+
+    final markers = <Marker>[];
+    if (_position != null) {
+      markers.add(
+        Marker(
+          point: LatLng(_position!.latitude, _position!.longitude),
+          width: 56,
+          height: 56,
+          child: const Icon(Icons.location_pin, color: Colors.red, size: 40),
+        ),
+      );
+    }
+    if (_destinationPoint != null) {
+      markers.add(
+        Marker(
+          point: _destinationPoint!,
+          width: 56,
+          height: 56,
+          child: const Icon(Icons.flag, color: Colors.green, size: 40),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -282,21 +474,17 @@ class _DriverHomePageState extends State<DriverHomePage> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.example.driver',
               ),
-              if (_position != null)
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: center,
-                      width: 56,
-                      height: 56,
-                      child: const Icon(
-                        Icons.location_pin,
-                        color: Colors.red,
-                        size: 40,
-                      ),
+              if (_routePoints.isNotEmpty)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _routePoints,
+                      color: Colors.blue,
+                      strokeWidth: 6.0,
                     ),
                   ],
                 ),
+              if (markers.isNotEmpty) MarkerLayer(markers: markers),
             ],
           ),
           Positioned(
@@ -411,7 +599,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
           'lng': _position!.longitude.toString(),
           'radius_km': radiusKm.toString(),
           'limit': '20',
-          'status': 'online',
+          'status': 'AVAILABLE',
         },
       );
 

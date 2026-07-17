@@ -137,8 +137,12 @@ public class TripController {
                         Map<String, String> data = new LinkedHashMap<>();
                         data.put("tripId", saved.getId());
                         data.put("customerId", saved.getCustomerId());
-                        data.put("lat", String.valueOf(saved.getLatitudeStart()));
-                        data.put("lng", String.valueOf(saved.getLongitudeStart()));
+                        //data.put("lat", String.valueOf(saved.getLatitudeStart()));
+                        //data.put("lng", String.valueOf(saved.getLongitudeStart()));
+                        data.put("lat", "37.42132786690192");
+                        data.put("lng", "-122.1361437329108");
+                        // 37.42132786690192, -122.1361437329108
+                        // 3375 El Camino Real, Palo Alto, CA 94306, United States
                         log.info("Sending FCM notification to driver {} about trip {}", drv.getId(), saved.getId());
                         firebaseNotificationService.sendMessage(token, "Ride request", "You have a new ride request", data);
                         log.debug("FCM notification sent successfully to driver {}", drv.getId());
@@ -161,7 +165,7 @@ public class TripController {
 
     @PutMapping("/{id}")
     public Trip update(@PathVariable("id") @NonNull String id, @RequestBody Trip payload) {
-        log.info("Updating trip {}", id);
+        log.info("Updating trip {}", id );
         Trip existing = findTrip(id).orElseThrow(() -> new NotFoundException("Không tìm thấy chuyến đi"));
         if (payload.getCustomerId() != null && !payload.getCustomerId().isBlank() && rideDataService.findCustomer(Objects.requireNonNull(payload.getCustomerId())).isEmpty()) {
             throw new BadRequestException("customerId không hợp lệ");

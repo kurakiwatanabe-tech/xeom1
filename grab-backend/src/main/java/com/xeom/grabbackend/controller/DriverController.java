@@ -1,25 +1,43 @@
 package com.xeom.grabbackend.controller;
 
-import com.xeom.grabbackend.model.Driver;
-import com.xeom.grabbackend.service.FirebaseNotificationService;
-import com.xeom.grabbackend.service.RideDataService;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.lang.NonNull;
-import java.util.Objects;
-
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.lang.NonNull;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import com.xeom.grabbackend.model.Driver;
+import com.xeom.grabbackend.model.DriverStatus;
+import com.xeom.grabbackend.service.FirebaseNotificationService;
+import com.xeom.grabbackend.service.RideDataService;
 
 @RestController
 @RequestMapping("/api/drivers")
 @CrossOrigin(origins = "*")
 public class DriverController {
-    private static final Set<String> VALID_STATUSES = Set.of("online", "offline", "busy");
+    private static final Set<String> VALID_STATUSES = Arrays.stream(DriverStatus.values())
+            .map(Enum::name)
+            .collect(Collectors.toSet());
     private static final Set<String> VALID_VEHICLES = Set.of("bike", "car", "car7", "truck");
 
     private final RideDataService rideDataService;
@@ -44,7 +62,7 @@ public class DriverController {
                                       @RequestParam(name = "radius_km", defaultValue = "5") double radius_km,
                                       @RequestParam(name = "limit", defaultValue = "10") int limit,
                                       @RequestParam(name = "vehicle", required = false) String vehicle,
-                                      @RequestParam(name = "status", defaultValue = "online") String status) {
+                                      @RequestParam(name = "status", defaultValue = "AVAILABLE") String status) {
         List<Map<String, Object>> candidates = rideDataService.findNearbyDrivers(lat, lng, radius_km, limit, vehicle, status);
 
         Map<String, Object> response = new LinkedHashMap<>();
@@ -82,7 +100,7 @@ public class DriverController {
         driver.setPlate(payload.getPlate());
         driver.setLat(payload.getLat());
         driver.setLng(payload.getLng());
-        driver.setStatus("offline");
+        driver.setStatus(DriverStatus.OFFLINE.name());
         driver.setRating(5.0);
         driver.setCreatedAt(Instant.now().toString());
         return rideDataService.saveDriver(driver);
@@ -110,11 +128,34 @@ public class DriverController {
 
     @PatchMapping("/{id}/status")
     public Driver updateStatus(@PathVariable("id") @NonNull String id, @RequestBody Map<String, String> payload) {
-        String status = payload.get("status");
-        if (status == null || !VALID_STATUSES.contains(status)) {
-            throw new BadRequestException("status phải là một trong: online, offline, busy");
+        String statusValue = payload.get("status");
+        if (statusValue == null || statusValue.isBlank()) {
+            throw new BadRequestException("Thiếu trường bắt buộc: status");
         }
-        return rideDataService.updateDriverStatus(Objects.requireNonNull(id), status);
+        DriverStatus driverStatus = DriverStatus.fromValue(statusValue);
+        if (!VALID_STATUSES.contains(driverStatus.name())) {
+            throw new BadRequestException("status phải là một trong: " + String.join(", ", VALID_STATUSES));
+        }
+        return rideDataService.updateDriverStatus(Objects.requireNonNull(id), driverStatus.name());
+    }
+
+    @PostMapping("/{id}/heartbeat")
+    public Map<String, Object> heartbeat(@PathVariable("id") @NonNull String id, @RequestBody(required = false) Map<String, Object> payload) {
+        findDriver(id).orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế"));
+        String statusValue = payload != null && payload.get("status") != null ? payload.get("status").toString() : null;
+        String nextStatus = statusValue != null && !statusValue.isBlank() ? statusValue.toUpperCase() : DriverStatus.AVAILABLE.name();
+        DriverStatus driverStatus = DriverStatus.fromValue(nextStatus);
+        if (payload != null && payload.containsKey("lat") && payload.containsKey("lng")) {
+            double lat = Double.parseDouble(payload.get("lat").toString());
+            double lng = Double.parseDouble(payload.get("lng").toString());
+            rideDataService.updateDriverLocation(id, lat, lng);
+        }
+        Driver saved = rideDataService.updateDriverStatus(id, driverStatus.name());
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", saved.getId());
+        response.put("status", saved.getStatus());
+        response.put("heartbeatAt", Instant.now().toString());
+        return response;
     }
 
     @PostMapping("/{id}/fcm-token")

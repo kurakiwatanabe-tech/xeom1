@@ -1,11 +1,14 @@
 package com.xeom.grabbackend.service;
 
-import com.xeom.grabbackend.model.Customer;
-import com.xeom.grabbackend.model.Driver;
-import com.xeom.grabbackend.model.Trip;
-import com.xeom.grabbackend.repository.CustomerRepository;
-import com.xeom.grabbackend.repository.DriverRepository;
-import com.xeom.grabbackend.repository.TripRepository;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Sort;
@@ -15,17 +18,20 @@ import org.springframework.data.geo.Metrics;
 import org.springframework.data.geo.Point;
 import org.springframework.data.redis.connection.RedisGeoCommands;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.lang.NonNull;
 
-import java.time.Instant;
-import java.util.Objects;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import com.xeom.grabbackend.model.Customer;
+import com.xeom.grabbackend.model.Driver;
+import com.xeom.grabbackend.model.DriverStatus;
+import com.xeom.grabbackend.model.Trip;
+import com.xeom.grabbackend.repository.CustomerRepository;
+import com.xeom.grabbackend.repository.DriverRepository;
+import com.xeom.grabbackend.repository.TripRepository;
+
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 @Service
 @Transactional
@@ -36,6 +42,9 @@ public class RideDataService {
     private final CustomerRepository customerRepository;
     private final TripRepository tripRepository;
     private final RedisTemplate<String, Object> redisTemplate;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public RideDataService(DriverRepository driverRepository,
                            CustomerRepository customerRepository,
@@ -54,7 +63,8 @@ public class RideDataService {
     public List<Driver> listDrivers(String status, String vehicle) {
         List<Driver> drivers = listDrivers();
         if (status != null && !status.isBlank()) {
-            drivers = drivers.stream().filter(d -> status.equals(d.getStatus())).toList();
+            String normalizedStatus = DriverStatus.fromValue(status).name();
+            drivers = drivers.stream().filter(d -> normalizedStatus.equals(d.getStatus())).toList();
         }
         if (vehicle != null && !vehicle.isBlank()) {
             drivers = drivers.stream().filter(d -> vehicle.equals(d.getVehicle())).toList();
@@ -97,7 +107,7 @@ public class RideDataService {
         driver.setPhone(phone);
         driver.setVehicle(vehicle);
         driver.setPlate(plate);
-        driver.setStatus("offline");
+        driver.setStatus(DriverStatus.OFFLINE.name());
         driver.setRating(5.0);
         driver.setCreatedAt(Instant.now().toString());
         return saveDriver(driver);
@@ -120,7 +130,7 @@ public class RideDataService {
         trip.setCustomerId(customerId);
         trip.setDriverId(driverId);
         trip.setPrice(price);
-        trip.setStatus(status == null || status.isBlank() ? "requested" : status);
+        trip.setStatus(status == null || status.isBlank() ? "RECEIVER_REQUEST" : status.toUpperCase());
         trip.setCreatedAt(Instant.now().toString());
         return saveTrip(trip);
     }
@@ -158,8 +168,47 @@ public class RideDataService {
         return saveDriver(driver);
     }
 
+    public int markStaleDriversOffline(@NonNull Duration staleAfter) {
+        List<Driver> drivers = listDrivers();
+        int removed = 0;
+        Instant cutoff = Instant.now().minus(staleAfter);
+
+        for (Driver driver : drivers) {
+            if (driver.getStatusUpdatedAt() == null || driver.getStatusUpdatedAt().isBlank()) {
+                continue;
+            }
+
+            try {
+                Instant lastStatusUpdate = Instant.parse(driver.getStatusUpdatedAt());
+                if (!lastStatusUpdate.isBefore(cutoff)) {
+                    continue;
+                }
+
+                removeDriverFromRedis(driver.getId());
+                updateDriverStatus(driver.getId(), DriverStatus.OFFLINE.name());
+                removed++;
+            } catch (Exception ex) {
+                log.warn("Unable to remove stale driver {}", driver.getId(), ex);
+            }
+        }
+
+        return removed;
+    }
+
     public void deleteDriver(@NonNull String id) {
-        driverRepository.deleteById(id);
+        Optional<Driver> driver = driverRepository.findById(id);
+        if (driver.isEmpty()) {
+            return;
+        }
+
+        List<Trip> trips = tripRepository.findByDriverId(id);
+        for (Trip trip : trips) {
+            trip.setDriverId(null);
+            tripRepository.save(trip);
+        }
+        driverRepository.delete(driver.get());
+        driverRepository.flush();
+        entityManager.clear();
     }
 
     public void deleteCustomer(@NonNull String id) {
@@ -268,6 +317,17 @@ public class RideDataService {
             redisTemplate.opsForGeo().add("drivers:location", new Point(lng, lat), driverId);
         } catch (Exception ex) {
             log.warn("Unable to persist driver location to Redis", ex);
+        }
+    }
+
+    private void removeDriverFromRedis(String driverId) {
+        if (driverId == null || driverId.isBlank()) {
+            return;
+        }
+        try {
+            redisTemplate.opsForGeo().remove("drivers:location", driverId);
+        } catch (Exception ex) {
+            log.warn("Unable to remove driver location from Redis for {}", driverId, ex);
         }
     }
 

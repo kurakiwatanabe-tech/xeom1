@@ -5,7 +5,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
-const backendBaseUrl = 'http://192.168.24.118:3000';
+import 'config.dart';
+
+String get backendBaseUrl => AppConfig.apiBase;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -90,7 +92,10 @@ class _LoginPageState extends State<LoginPage> {
         criticalAlert: false,
         provisional: false,
       );
-      log('FCM permission status: ${settings.authorizationStatus}', name: 'driver_app');
+      log(
+        'FCM permission status: ${settings.authorizationStatus}',
+        name: 'driver_app',
+      );
 
       final token = await messaging.getToken();
       if (token == null || token.isEmpty) {
@@ -98,7 +103,10 @@ class _LoginPageState extends State<LoginPage> {
       }
 
       final uri = Uri.parse('$backendBaseUrl/api/drivers/$driverId/fcm-token');
-      log('Registering FCM token for driver $driverId at $uri', name: 'driver_app');
+      log(
+        'Registering FCM token for driver $driverId at $uri',
+        name: 'driver_app',
+      );
       final response = await http
           .post(
             uri,
@@ -108,11 +116,17 @@ class _LoginPageState extends State<LoginPage> {
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode != 200) {
-        log('FCM registration failed: ${response.statusCode} ${response.body}', name: 'driver_app');
+        log(
+          'FCM registration failed: ${response.statusCode} ${response.body}',
+          name: 'driver_app',
+        );
         throw Exception('Lỗi cập nhật token FCM: ${response.statusCode}');
       }
 
-      log('FCM token updated successfully for driver $driverId', name: 'driver_app');
+      log(
+        'FCM token updated successfully for driver $driverId',
+        name: 'driver_app',
+      );
     } catch (e) {
       log('FCM registration error: $e', name: 'driver_app');
       if (mounted) {

@@ -80,4 +80,36 @@ class DriverControllerTest {
                 .andExpect(jsonPath("$.sent").value(true))
                 .andExpect(jsonPath("$.messageId").value("message-id"));
     }
+
+    @Test
+    void shouldHeartbeatDriverAndUpdateLocation() throws Exception {
+        Driver driver = new Driver();
+        driver.setId("drv_1");
+        driver.setName("Alice");
+        driver.setPhone("0900000000");
+        driver.setVehicle("car");
+        driver.setPlate("51A-12345");
+        driver.setStatus("offline");
+        driver.setRating(5.0);
+
+        when(rideDataService.findDriver("drv_1")).thenReturn(Optional.of(driver));
+        when(rideDataService.updateDriverLocation(eq("drv_1"), eq(21.0245), eq(105.8412))).thenAnswer(invocation -> {
+            driver.setLat(21.0245);
+            driver.setLng(105.8412);
+            return driver;
+        });
+        when(rideDataService.updateDriverStatus(eq("drv_1"), eq("AVAILABLE"))).thenAnswer(invocation -> {
+            driver.setStatus("AVAILABLE");
+            return driver;
+        });
+
+        mockMvc.perform(post("/api/drivers/drv_1/heartbeat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"available\",\"lat\":21.0245,\"lng\":105.8412}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("AVAILABLE"));
+
+        verify(rideDataService).updateDriverLocation("drv_1", 21.0245, 105.8412);
+        verify(rideDataService).updateDriverStatus("drv_1", "AVAILABLE");
+    }
 }
