@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grab Admin — Tìm đường & Quản lý</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --ink:#0B1D14; --paper:#F6F5F0; --green:#00B14F; --green-dark:#00893D;
+    --line:#E1DFD6; --muted:#6B7268; --card:#FFFFFF; --warn:#E6592E;
+    --sidebar-w:220px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--paper);color:var(--ink);}
+  #app{display:flex;height:100vh;overflow:hidden;}
+
+  /* Sidebar */
+  #sidebar{
+    width:var(--sidebar-w);flex-shrink:0;background:var(--ink);color:#fff;
+    display:flex;flex-direction:column;padding:18px 0;
+  }
+  .brand{display:flex;align-items:center;gap:9px;padding:0 20px 20px;}
+  .brand .dot{width:11px;height:11px;border-radius:50%;background:var(--green);}
+  .brand span{font-weight:800;font-size:15px;letter-spacing:.2px;}
+  .nav-item{
+    display:flex;align-items:center;gap:11px;padding:12px 20px;cursor:pointer;
+    font-size:13.5px;color:#C9D1CB;border-left:3px solid transparent;transition:.15s;
+  }
+  .nav-item:hover{background:rgba(255,255,255,0.05);color:#fff;}
+  .nav-item.active{background:rgba(0,177,79,0.15);border-left-color:var(--green);color:#fff;font-weight:600;}
+  .nav-icon{font-size:16px;width:18px;text-align:center;}
+  .sidebar-footer{margin-top:auto;padding:14px 20px;font-size:11px;color:#7B857E;border-top:1px solid rgba(255,255,255,0.08);}
+  .conn-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;}
+  .conn-dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex-shrink:0;}
+  .conn-dot.ok{background:var(--green);}
+  #apiInput{
+    width:100%;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);
+    border-radius:6px;color:#fff;font-size:11px;padding:5px 7px;outline:none;
+  }
+
+  /* Main */
+  #main{flex:1;position:relative;overflow:hidden;}
+  .view{display:none;width:100%;height:100%;position:relative;}
+  .view.active{display:block;}
+
+  /* --- Route finder view --- */
+  #routeMap{position:absolute;inset:0;}
+  .panel{
+    position:absolute;top:16px;left:16px;width:320px;max-width:calc(100vw - 32px);
+    background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(11,29,20,0.18);z-index:10;overflow:hidden;
+  }
+  .panel-header{padding:14px 16px 4px;font-size:14px;font-weight:700;}
+  .field-group{padding:8px 12px 12px;position:relative;}
+  .field-row{display:flex;align-items:center;gap:9px;background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin-bottom:8px;}
+  .field-row:focus-within{border-color:var(--green);}
+  .field-row .fdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .fdot.from{background:var(--green);}
+  .fdot.to{background:var(--ink);border-radius:2px;}
+  .field-row input{border:none;background:transparent;outline:none;font-size:13.5px;width:100%;color:var(--ink);}
+  .suggestions{background:var(--card);border:1px solid var(--line);border-radius:10px;margin:-4px 0 8px;max-height:150px;overflow-y:auto;display:none;}
+  .suggestions.show{display:block;}
+  .suggestion-item{padding:8px 11px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--line);}
+  .suggestion-item:last-child{border-bottom:none;}
+  .suggestion-item:hover{background:var(--paper);}
+  .mode-tabs{display:flex;gap:6px;padding:0 12px 10px;}
+  .mode-tab{flex:1;padding:6px 4px;text-align:center;font-size:11.5px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--card);cursor:pointer;color:var(--muted);}
+  .mode-tab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
+  .btn{width:calc(100% - 24px);margin:2px 12px 12px;background:var(--green);color:#fff;border:none;border-radius:10px;padding:10px;font-size:13.5px;font-weight:700;cursor:pointer;}
+  .btn:hover{background:var(--green-dark);}
+  .btn:disabled{background:var(--line);color:var(--muted);cursor:not-allowed;}
+  .btn.secondary{background:var(--card);color:var(--ink);border:1px solid var(--line);}
+  .btn.secondary:hover{background:var(--paper);}
+  .result-card{position:absolute;left:16px;bottom:16px;width:320px;max-width:calc(100vw - 32px);background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(11,29,20,0.18);padding:14px 16px;z-index:10;display:none;}
+  .result-card.show{display:block;}
+  .result-dist{font-size:24px;font-weight:800;}
+  .result-unit{font-size:12px;color:var(--muted);}
+  .result-time{font-size:12.5px;color:var(--muted);margin:2px 0 8px;}
+  .result-route{font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:8px;line-height:1.6;}
+
+  /* --- CRUD views (customers/drivers) --- */
+  .crud-view{padding:24px 28px;height:100%;overflow-y:auto;}
+  .crud-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+  .crud-header h2{margin:0;font-size:19px;}
+  .crud-header .sub{font-size:12.5px;color:var(--muted);margin-top:3px;}
+  .toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center;}
+  .search-box{flex:1;min-width:180px;background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:13px;outline:none;}
+  .search-box:focus{border-color:var(--green);}
+  select.filter-box{background:var(--card);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-size:13px;outline:none;color:var(--ink);}
+
+  table{width:100%;border-collapse:collapse;background:var(--card);border-radius:12px;overflow:hidden;box-shadow:0 4px 14px rgba(11,29,20,0.06);}
+  thead th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);padding:11px 14px;border-bottom:1px solid var(--line);background:var(--paper);}
+  tbody td{padding:11px 14px;font-size:13px;border-bottom:1px solid var(--line);vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:#FAFAF7;}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
+  .badge.online{background:#E4F8ED;color:var(--green-dark);}
+  .badge.offline{background:#F0EFEA;color:var(--muted);}
+  .badge.busy{background:#FDEDE7;color:var(--warn);}
+  .row-actions{display:flex;gap:6px;}
+  .icon-btn{background:var(--card);border:1px solid var(--line);border-radius:7px;width:28px;height:28px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center;}
+  .icon-btn:hover{border-color:var(--green);}
+  .icon-btn.danger:hover{border-color:var(--warn);color:var(--warn);}
+  .status-select{font-size:11px;border-radius:6px;border:1px solid var(--line);padding:3px 5px;background:var(--card);}
+  .empty-state{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
+
+  /* Modal */
+  .modal-overlay{position:fixed;inset:0;background:rgba(11,29,20,0.4);display:none;align-items:center;justify-content:center;z-index:100;}
+  .modal-overlay.show{display:flex;}
+  .modal{background:var(--card);border-radius:16px;width:400px;max-width:calc(100vw - 32px);padding:22px 24px;box-shadow:0 20px 50px rgba(0,0,0,0.25);}
+  .modal h3{margin:0 0 16px;font-size:16px;}
+  .form-field{margin-bottom:12px;}
+  .form-field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;}
+  .form-field input, .form-field select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:9px;font-size:13.5px;outline:none;background:var(--paper);}
+  .form-field input:focus, .form-field select:focus{border-color:var(--green);}
+  .form-row{display:flex;gap:10px;}
+  .form-row .form-field{flex:1;}
+  .modal-actions{display:flex;gap:10px;margin-top:18px;}
+  .modal-actions .btn{margin:0;width:auto;flex:1;}
+
+  /* --- Nearby view --- */
+  #nearbyMap{position:absolute;inset:0;}
+  .nearby-panel{position:absolute;top:16px;left:16px;width:320px;max-width:calc(100vw - 32px);background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(11,29,20,0.18);z-index:10;padding:16px;max-height:calc(100vh - 32px);overflow-y:auto;}
+  .nearby-panel h3{margin:0 0 4px;font-size:15px;}
+  .nearby-panel .sub{font-size:11.5px;color:var(--muted);margin-bottom:12px;}
+  .slider-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;margin-bottom:4px;}
+  input[type=range]{width:100%;accent-color:var(--green);margin-bottom:10px;}
+  .driver-result{display:flex;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;}
+  .driver-result:hover{border-color:var(--green);}
+  .driver-avatar{width:34px;height:34px;border-radius:50%;background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+  .driver-info{flex:1;min-width:0;}
+  .driver-name{font-size:13px;font-weight:700;}
+  .driver-meta{font-size:11px;color:var(--muted);}
+  .driver-dist{font-size:12.5px;font-weight:700;color:var(--green-dark);white-space:nowrap;}
+
+  .status-toast{position:absolute;top:16px;right:16px;background:var(--card);padding:9px 15px;border-radius:10px;font-size:12px;color:var(--muted);box-shadow:0 6px 16px rgba(11,29,20,0.12);z-index:20;display:none;}
+  .status-toast.show{display:block;}
+
+  @media (max-width:760px){
+    #sidebar{position:absolute;z-index:50;height:10%;}
+    .crud-view{padding:16px;}
+  }
+
+  /* Mobile: sidebar hide/show + floating toggle */
+  #sidebar{transition:transform 240ms ease;}
+  #sidebar.hidden{transform:translateX(-100%);} 
+  .mobile-toggle{display:none;position:fixed;right:16px;bottom:16px;width:56px;height:56px;border-radius:28px;background:var(--green);color:#fff;align-items:center;justify-content:center;z-index:70;box-shadow:0 8px 20px rgba(0,0,0,0.18);border:none;font-size:22px;cursor:pointer}
+  @media (max-width:760px){ .mobile-toggle{display:flex;} }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="brand"><div class="dot"></div><span>Grab Admin</span></div>
+    <div class="nav-item active" data-view="route"><span class="nav-icon">🗺️</span> Tìm đường</div>
+    <div class="nav-item" data-view="nearby"><span class="nav-icon">📍</span> Tìm tài xế quanh đây</div>
+    <div class="nav-item" data-view="customers"><span class="nav-icon">👥</span> Khách hàng</div>
+    <div class="nav-item" data-view="drivers"><span class="nav-icon">🚗</span> Tài xế</div>
+    <div class="nav-item" data-view="trips"><span class="nav-icon">🧾</span> Danh sách chuyến đi</div>
+    <div class="sidebar-footer">
+      <div class="conn-row"><div class="conn-dot" id="connDot"></div><span id="connText">Đang kiểm tra...</span></div>
+      <input id="apiInput" type="text" value="http://localhost:3000" spellcheck="false">
+    </div>
+  </div>
+
+  <div id="main">
+
+    <!-- VIEW: Route finder -->
+    <div class="view active" id="view-route">
+      <div id="routeMap"></div>
+      <div class="panel">
+        <div class="panel-header">Tìm đường & đo khoảng cách</div>
+        <div class="field-group">
+          <div class="field-row"><div class="fdot from"></div><input id="rFrom" placeholder="Điểm đi" autocomplete="off"></div>
+          <div class="suggestions" id="rFromSuggest"></div>
+          <div class="field-row"><div class="fdot to"></div><input id="rTo" placeholder="Điểm đến" autocomplete="off"></div>
+          <div class="suggestions" id="rToSuggest"></div>
+        </div>
+        <div class="mode-tabs">
+          <div class="mode-tab active" data-mode="driving">🚗 Xe</div>
+          <div class="mode-tab" data-mode="cycling">🚴 Đạp</div>
+          <div class="mode-tab" data-mode="foot">🚶 Bộ</div>
+        </div>
+        <button class="btn" id="rFindBtn" disabled>Tìm đường</button>
+      </div>
+      <div class="result-card" id="rResult">
+        <div class="result-dist" id="rDist">–</div>
+        <div class="result-unit" style="margin-top:-20px;margin-left:0">km</div>
+        <div class="result-time" id="rTime">–</div>
+        <div class="result-route" id="rRouteInfo"></div>
+      </div>
+    </div>
+
+    <!-- VIEW: Nearby drivers -->
+    <div class="view" id="view-nearby">
+      <div id="nearbyMap"></div>
+      <div class="nearby-panel">
+        <h3>Tìm tài xế quanh đây</h3>
+        <div class="sub">Nhấp vào bản đồ để chọn vị trí của bạn, hoặc dùng vị trí hiện tại.</div>
+        <div class="field-group" style="padding:0;margin-bottom:10px;">
+          <div class="field-row"><div class="fdot from"></div><input id="nLocation" placeholder="Vị trí của bạn" autocomplete="off"></div>
+          <div class="suggestions" id="nLocSuggest"></div>
+        </div>
+        <button class="btn secondary" id="nGeoBtn" style="margin:0 0 12px;width:100%;">📍 Dùng vị trí hiện tại</button>
+        <div class="slider-row"><span>Bán kính</span><span id="nRadiusVal">5 km</span></div>
+        <input type="range" id="nRadius" min="1" max="20" value="5">
+        <div class="form-field">
+          <label>Loại xe</label>
+          <select id="nVehicle">
+            <option value="">Tất cả</option>
+            <option value="bike">Xe máy</option>
+            <option value="car">Ô tô</option>
+            <option value="car7">Ô tô 7 chỗ</option>
+            <option value="truck">Xe tải</option>
+          </select>
+        </div>
+        <button class="btn" id="nFindBtn" disabled style="margin:6px 0 4px;width:100%;">Tìm tài xế</button>
+        <div id="nResults" style="margin-top:10px;"></div>
+      </div>
+    </div>
+
+    <!-- VIEW: Customers -->
+    <div class="view" id="view-customers">
+      <div class="crud-view">
+        <div class="crud-header">
+          <div><h2>Khách hàng</h2><div class="sub" id="custCount">–</div></div>
+          <button class="btn secondary" style="width:auto;margin:0;padding:9px 16px;" id="custAddBtn">+ Thêm khách hàng</button>
+        </div>
+        <div class="toolbar"><input class="search-box" id="custSearch" placeholder="Tìm theo tên, SĐT, email..."></div>
+        <table>
+          <thead><tr><th>Tên</th><th>SĐT</th><th>Email</th><th>Địa chỉ</th><th></th></tr></thead>
+          <tbody id="custTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VIEW: Drivers -->
+    <div class="view" id="view-drivers">
+      <div class="crud-view">
+        <div class="crud-header">
+          <div><h2>Tài xế</h2><div class="sub" id="drvCount">–</div></div>
+          <button class="btn secondary" style="width:auto;margin:0;padding:9px 16px;" id="drvAddBtn">+ Thêm tài xế</button>
+        </div>
+        <div class="toolbar">
+          <select class="filter-box" id="drvStatusFilter">
+            <option value="">Tất cả trạng thái</option>
+            <option value="online">Online</option>
+            <option value="offline">Offline</option>
+            <option value="busy">Đang bận</option>
+          </select>
+          <select class="filter-box" id="drvVehicleFilter">
+            <option value="">Tất cả loại xe</option>
+            <option value="bike">Xe máy</option>
+            <option value="car">Ô tô</option>
+            <option value="car7">Ô tô 7 chỗ</option>
+            <option value="truck">Xe tải</option>
+          </select>
+        </div>
+        <table>
+          <thead><tr><th>Tên</th><th>SĐT</th><th>Xe</th><th>Biển số</th><th>Trạng thái</th><th>Đánh giá</th><th></th></tr></thead>
+          <tbody id="drvTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VIEW: Trips -->
+    <div class="view" id="view-trips">
+      <div class="crud-view">
+        <div class="crud-header">
+          <div><h2>Danh sách chuyến đi</h2><div class="sub" id="tripCount">–</div></div>
+          <button class="btn secondary" style="width:auto;margin:0;padding:9px 16px;" id="tripAddBtn">+ Thêm chuyến đi</button>
+        </div>
+        <div class="toolbar">
+          <input class="search-box" id="tripSearch" placeholder="Tìm theo mã, khách hàng, tài xế...">
+        </div>
+        <table>
+          <thead><tr><th>Mã</th><th>Khách hàng</th><th>Tài xế</th><th>Giá</th><th>Bắt đầu</th><th>Kết thúc</th><th>Trạng thái</th><th></th></tr></thead>
+          <tbody id="tripTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal: customer form -->
+<div class="modal-overlay" id="custModalOverlay">
+  <div class="modal">
+    <h3 id="custModalTitle">Thêm khách hàng</h3>
+    <input type="hidden" id="custId">
+    <div class="form-field"><label>Họ tên *</label><input id="custName" placeholder="Nguyễn Văn A"></div>
+    <div class="form-field"><label>Số điện thoại *</label><input id="custPhone" placeholder="0901234567"></div>
+    <div class="form-field"><label>Email</label><input id="custEmail" placeholder="a@example.com"></div>
+    <div class="form-field"><label>Địa chỉ</label><input id="custAddress" placeholder="12 Hàng Bài, Hà Nội"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="custCancelBtn">Huỷ</button>
+      <button class="btn" id="custSaveBtn">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: driver form -->
+<div class="modal-overlay" id="drvModalOverlay">
+  <div class="modal">
+    <h3 id="drvModalTitle">Thêm tài xế</h3>
+    <input type="hidden" id="drvId">
+    <div class="form-field"><label>Họ tên *</label><input id="drvName" placeholder="Lê Văn B"></div>
+    <div class="form-field"><label>Số điện thoại *</label><input id="drvPhone" placeholder="0912345678"></div>
+    <div class="form-row">
+      <div class="form-field"><label>Loại xe *</label>
+        <select id="drvVehicle">
+          <option value="bike">Xe máy</option>
+          <option value="car">Ô tô</option>
+          <option value="car7">Ô tô 7 chỗ</option>
+          <option value="truck">Xe tải</option>
+        </select>
+      </div>
+      <div class="form-field"><label>Biển số *</label><input id="drvPlate" placeholder="29A1-123.45"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Vĩ độ (lat)</label><input id="drvLat" placeholder="21.0285"></div>
+      <div class="form-field"><label>Kinh độ (lng)</label><input id="drvLng" placeholder="105.8542"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="drvCancelBtn">Huỷ</button>
+      <button class="btn" id="drvSaveBtn">Lưu</button>
+    </div>
+  </div>
+</div>
+
+    <!-- Modal: trip form -->
+    <div class="modal-overlay" id="tripModalOverlay">
+      <div class="modal">
+        <h3 id="tripModalTitle">Thêm chuyến đi</h3>
+        <input type="hidden" id="tripId">
+        <div class="form-field"><label>Khách hàng *</label>
+          <select id="tripCustomer"></select>
+        </div>
+        <div class="form-field"><label>Tài xế</label>
+          <select id="tripDriver"><option value="">— Chọn tài xế —</option></select>
+        </div>
+        <div class="form-row">
+          <div class="form-field"><label>Giá tiền</label><input id="tripPrice" placeholder="120000"></div>
+          <div class="form-field"><label>Trạng thái</label>
+            <select id="tripStatus">
+              <option value="requested">Yêu cầu</option>
+              <option value="ongoing">Đang thực hiện</option>
+              <option value="completed">Hoàn thành</option>
+              <option value="cancelled">Huỷ</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field"><label>Bắt đầu</label><input id="tripTimeStart" type="datetime-local"></div>
+          <div class="form-field"><label>Kết thúc</label><input id="tripTimeEnd" type="datetime-local"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-field"><label>Vĩ độ bắt đầu</label><input id="tripLatStart" placeholder="21.0285"></div>
+          <div class="form-field"><label>Kinh độ bắt đầu</label><input id="tripLngStart" placeholder="105.8542"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-field"><label>Vĩ độ kết thúc</label><input id="tripLatEnd" placeholder="21.0300"></div>
+          <div class="form-field"><label>Kinh độ kết thúc</label><input id="tripLngEnd" placeholder="105.8600"></div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn secondary" id="tripCancelBtn">Huỷ</button>
+          <button class="btn" id="tripSaveBtn">Lưu</button>
+        </div>
+      </div>
+    </div>
+
+<div class="status-toast" id="toast"></div>
+<!-- Mobile sidebar toggle -->
+<button id="sidebarToggle" class="mobile-toggle" aria-label="Toggle sidebar">☰</button>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ================= CONFIG ================= */
+let API_BASE = document.getElementById('apiInput').value.trim();
+document.getElementById('apiInput').addEventListener('change', (e) => {
+  API_BASE = e.target.value.trim().replace(/\/$/, '');
+  checkConnection();
+});
+
+function toast(msg, isError){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.color = isError ? '#E6592E' : '#6B7268';
+  t.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+async function api(path, opts = {}){
+  const res = await fetch(API_BASE + path, {
+    headers: {'Content-Type':'application/json'},
+    ...opts,
+  });
+  const data = await res.json().catch(() => ({}));
+  if(!res.ok) throw new Error(data.error || 'Lỗi không xác định');
+  return data;
+}
+
+async function checkConnection(){
+  const dot = document.getElementById('connDot');
+  const text = document.getElementById('connText');
+  try{
+    await api('/');
+    dot.classList.add('ok');
+    text.textContent = 'Đã kết nối backend';
+  }catch(err){
+    dot.classList.remove('ok');
+    text.textContent = 'Chưa kết nối backend';
+  }
+}
+checkConnection();
+setInterval(checkConnection, 15000);
+
+/* ================= NAVIGATION ================= */
+const views = {
+  route: document.getElementById('view-route'),
+  nearby: document.getElementById('view-nearby'),
+  customers: document.getElementById('view-customers'),
+  drivers: document.getElementById('view-drivers'),
+  trips: document.getElementById('view-trips'),
+};
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    Object.values(views).forEach(v => v.classList.remove('active'));
+    const key = item.dataset.view;
+    views[key].classList.add('active');
+    if(key === 'route'){ setTimeout(() => routeMap.invalidateSize(), 50); }
+    if(key === 'nearby'){ setTimeout(() => nearbyMap.invalidateSize(), 50); }
+    if(key === 'customers'){ loadCustomers(); }
+    if(key === 'drivers'){ loadDrivers(); }
+    if(key === 'trips'){ loadTrips(); }
+    // On small screens, hide sidebar after navigation to give more map space
+    if(window.innerWidth <= 760){ document.getElementById('sidebar').classList.add('hidden'); }
+  });
+});
+
+// Mobile sidebar toggle button (inserts behavior for the floating button)
+function setupMobileSidebarToggle(){
+  const toggle = document.getElementById('sidebarToggle');
+  if(!toggle) return;
+  const sidebar = document.getElementById('sidebar');
+  toggle.addEventListener('click', () => {
+    sidebar.classList.toggle('hidden');
+    toggle.textContent = sidebar.classList.contains('hidden') ? '☰' : '✖';
+  });
+  // Ensure sidebar visible on larger screens
+  window.addEventListener('resize', () => { if(window.innerWidth > 760) sidebar.classList.remove('hidden'); });
+}
+setupMobileSidebarToggle();
+
+/* ================= SHARED: Nominatim search ================= */
+let searchTimeout = null;
+function setupSearch(input, suggestBox, onPick){
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    const q = input.value.trim();
+    if(q.length < 3){ suggestBox.classList.remove('show'); return; }
+    searchTimeout = setTimeout(() => doSearch(q, suggestBox, onPick), 400);
+  });
+  document.addEventListener('click', (e) => {
+    if(!input.contains(e.target) && !suggestBox.contains(e.target)) suggestBox.classList.remove('show');
+  });
+}
+async function doSearch(query, suggestBox, onPick){
+  try{
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`;
+    const res = await fetch(url, {headers:{'Accept-Language':'vi'}});
+    const data = await res.json();
+    suggestBox.innerHTML = '';
+    if(data.length === 0){ suggestBox.classList.remove('show'); return; }
+    data.forEach(place => {
+      const div = document.createElement('div');
+      div.className = 'suggestion-item';
+      div.textContent = place.display_name;
+      div.onclick = () => {
+        onPick(parseFloat(place.lat), parseFloat(place.lon), place.display_name);
+        suggestBox.classList.remove('show'); suggestBox.innerHTML = '';
+      };
+      suggestBox.appendChild(div);
+    });
+    suggestBox.classList.add('show');
+  }catch(err){ console.error(err); }
+}
+
+const greenIcon = L.divIcon({className:'', html:'<div style="width:16px;height:16px;border-radius:50%;background:#00B14F;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize:[16,16], iconAnchor:[8,8]});
+const blackIcon = L.divIcon({className:'', html:'<div style="width:16px;height:16px;border-radius:4px;background:#0B1D14;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize:[16,16], iconAnchor:[8,8]});
+const driverIcon = L.divIcon({className:'', html:'<div style="width:26px;height:26px;border-radius:50%;background:#fff;border:2px solid #00B14F;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;font-size:13px;">🚗</div>', iconSize:[26,26], iconAnchor:[13,13]});
+
+/* ================= VIEW 1: ROUTE FINDER ================= */
+const routeMap = L.map('routeMap', {zoomControl:false}).setView([21.0285, 105.8542], 13);
+L.control.zoom({position:'bottomright'}).addTo(routeMap);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(routeMap);
+
+let rFromLL = null, rToLL = null, rFromMarker = null, rToMarker = null, rRouteLine = null, rMode = 'driving', rPick = 'from';
+
+function rSetFrom(lat,lng,label){
+  rFromLL=[lat,lng]; if(rFromMarker) routeMap.removeLayer(rFromMarker);
+  rFromMarker = L.marker([lat,lng],{icon:greenIcon}).addTo(routeMap);
+  if(label) document.getElementById('rFrom').value = label;
+  document.getElementById('rFindBtn').disabled = !(rFromLL && rToLL);
+}
+function rSetTo(lat,lng,label){
+  rToLL=[lat,lng]; if(rToMarker) routeMap.removeLayer(rToMarker);
+  rToMarker = L.marker([lat,lng],{icon:blackIcon}).addTo(routeMap);
+  if(label) document.getElementById('rTo').value = label;
+  document.getElementById('rFindBtn').disabled = !(rFromLL && rToLL);
+}
+routeMap.on('click', (e) => {
+  const {lat,lng} = e.latlng;
+  if(rPick === 'from'){ rSetFrom(lat,lng,`${lat.toFixed(5)}, ${lng.toFixed(5)}`); rPick='to'; }
+  else{ rSetTo(lat,lng,`${lat.toFixed(5)}, ${lng.toFixed(5)}`); rPick='from'; }
+});
+setupSearch(document.getElementById('rFrom'), document.getElementById('rFromSuggest'), (lat,lng,label)=>{rSetFrom(lat,lng,label); routeMap.setView([lat,lng],14);});
+setupSearch(document.getElementById('rTo'), document.getElementById('rToSuggest'), (lat,lng,label)=>{rSetTo(lat,lng,label); routeMap.setView([lat,lng],14);});
+document.querySelectorAll('#view-route .mode-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('#view-route .mode-tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active'); rMode = tab.dataset.mode;
+  };
+});
+document.getElementById('rFindBtn').onclick = async () => {
+  if(!rFromLL || !rToLL) return;
+  const btn = document.getElementById('rFindBtn'); btn.disabled = true; btn.textContent = 'Đang tìm...';
+  try{
+    const coords = `${rFromLL[1]},${rFromLL[0]};${rToLL[1]},${rToLL[0]}`;
+    const url = `https://router.project-osrm.org/route/v1/${rMode}/${coords}?overview=full&geometries=geojson`;
+    const res = await fetch(url); const data = await res.json();
+    if(data.code !== 'Ok'){ toast('Không tìm được đường đi', true); return; }
+    const route = data.routes[0];
+    if(rRouteLine) routeMap.removeLayer(rRouteLine);
+    const latlngs = route.geometry.coordinates.map(c=>[c[1],c[0]]);
+    rRouteLine = L.polyline(latlngs,{color:'#00B14F',weight:5,opacity:0.85}).addTo(routeMap);
+    routeMap.fitBounds(rRouteLine.getBounds(),{padding:[60,60]});
+    const km = (route.distance/1000).toFixed(2);
+    const mins = Math.round(route.duration/60);
+    const hrs = Math.floor(mins/60), remMins = mins%60;
+    document.getElementById('rDist').textContent = km;
+    document.getElementById('rTime').textContent = `⏱ ${hrs>0 ? hrs+' giờ '+remMins+' phút' : mins+' phút'}`;
+    document.getElementById('rRouteInfo').innerHTML = `<b>Từ:</b> ${document.getElementById('rFrom').value}<br><b>Đến:</b> ${document.getElementById('rTo').value}`;
+    document.getElementById('rResult').classList.add('show');
+  }catch(err){ toast('Lỗi khi tìm đường', true); }
+  finally{ btn.disabled=false; btn.textContent='Tìm đường'; }
+};
+
+/* ================= VIEW 2: NEARBY DRIVERS ================= */
+const nearbyMap = L.map('nearbyMap', {zoomControl:false}).setView([21.0285, 105.8542], 13);
+L.control.zoom({position:'bottomright'}).addTo(nearbyMap);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(nearbyMap);
+
+let nUserLL = null, nUserMarker = null, nDriverMarkers = [], nRadiusCircle = null;
+
+function nSetUser(lat,lng,label){
+  nUserLL = [lat,lng];
+  if(nUserMarker) nearbyMap.removeLayer(nUserMarker);
+  nUserMarker = L.marker([lat,lng],{icon:greenIcon}).addTo(nearbyMap);
+  if(label) document.getElementById('nLocation').value = label;
+  document.getElementById('nFindBtn').disabled = false;
+  drawRadiusCircle();
+}
+function drawRadiusCircle(){
+  if(!nUserLL) return;
+  if(nRadiusCircle) nearbyMap.removeLayer(nRadiusCircle);
+  const km = parseFloat(document.getElementById('nRadius').value);
+  nRadiusCircle = L.circle(nUserLL, {radius: km*1000, color:'#00B14F', fillOpacity:0.06, weight:1.5}).addTo(nearbyMap);
+}
+nearbyMap.on('click', (e) => nSetUser(e.latlng.lat, e.latlng.lng, `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`));
+setupSearch(document.getElementById('nLocation'), document.getElementById('nLocSuggest'), (lat,lng,label)=>{ nSetUser(lat,lng,label); nearbyMap.setView([lat,lng],14); });
+
+document.getElementById('nGeoBtn').onclick = () => {
+  if(!navigator.geolocation){ toast('Trình duyệt không hỗ trợ định vị', true); return; }
+  navigator.geolocation.getCurrentPosition(
+    pos => { nSetUser(pos.coords.latitude, pos.coords.longitude, 'Vị trí hiện tại của bạn'); nearbyMap.setView([pos.coords.latitude,pos.coords.longitude],14); },
+    () => toast('Không lấy được vị trí. Hãy chọn trên bản đồ.', true)
+  );
+};
+
+document.getElementById('nRadius').oninput = (e) => {
+  document.getElementById('nRadiusVal').textContent = e.target.value + ' km';
+  drawRadiusCircle();
+};
+
+document.getElementById('nFindBtn').onclick = async () => {
+  if(!nUserLL) return;
+  const btn = document.getElementById('nFindBtn'); btn.disabled = true; btn.textContent = 'Đang tìm...';
+  const radius = document.getElementById('nRadius').value;
+  const vehicle = document.getElementById('nVehicle').value;
+  try{
+    const params = new URLSearchParams({lat:nUserLL[0], lng:nUserLL[1], radius_km:radius, status:'online'});
+    if(vehicle) params.set('vehicle', vehicle);
+    const data = await api('/api/drivers/nearby?' + params.toString());
+    nDriverMarkers.forEach(m => nearbyMap.removeLayer(m));
+    nDriverMarkers = [];
+    const resultsEl = document.getElementById('nResults');
+    resultsEl.innerHTML = '';
+    if(data.data.length === 0){
+      resultsEl.innerHTML = '<div class="empty-state" style="padding:16px;">Không tìm thấy tài xế nào trong bán kính này.</div>';
+    }else{
+      const vehicleEmoji = {bike:'🏍️', car:'🚗', car7:'🚐', truck:'🚚'};
+      data.data.forEach(d => {
+        const marker = L.marker([d.lat, d.lng], {icon:driverIcon}).addTo(nearbyMap)
+          .bindPopup(`<b>${d.name}</b><br>${d.plate}<br>${d.distance_km} km`);
+        nDriverMarkers.push(marker);
+        const row = document.createElement('div');
+        row.className = 'driver-result';
+        row.innerHTML = `
+          <div class="driver-avatar">${vehicleEmoji[d.vehicle] || '🚗'}</div>
+          <div class="driver-info">
+            <div class="driver-name">${d.name}</div>
+            <div class="driver-meta">${d.plate} · ⭐ ${d.rating}</div>
+          </div>
+          <div class="driver-dist">${d.distance_km} km</div>
+        `;
+        row.onclick = () => { nearbyMap.setView([d.lat,d.lng], 16); marker.openPopup(); };
+        resultsEl.appendChild(row);
+      });
+    }
+    toast(`Tìm thấy ${data.count} tài xế`);
+  }catch(err){
+    toast(err.message || 'Lỗi khi tìm tài xế', true);
+  }finally{
+    btn.disabled=false; btn.textContent='Tìm tài xế';
+  }
+};
+
+/* ================= VIEW 3: CUSTOMERS CRUD ================= */
+async function loadCustomers(){
+  const q = document.getElementById('custSearch').value.trim();
+  try{
+    const params = q ? '?q=' + encodeURIComponent(q) : '';
+    const data = await api('/api/customers' + params);
+    document.getElementById('custCount').textContent = `${data.count} khách hàng`;
+    const tbody = document.getElementById('custTbody');
+    if(data.data.length === 0){
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state">Chưa có khách hàng nào. Nhấn "+ Thêm khách hàng" để bắt đầu.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.data.map(c => `
+      <tr>
+        <td>${escapeHtml(c.name)}</td>
+        <td>${escapeHtml(c.phone)}</td>
+        <td>${escapeHtml(c.email || '–')}</td>
+        <td>${escapeHtml(c.address || '–')}</td>
+        <td><div class="row-actions">
+          <button class="icon-btn" onclick="editCustomer('${c.id}')" title="Sửa">✏️</button>
+          <button class="icon-btn danger" onclick="deleteCustomer('${c.id}')" title="Xoá">🗑️</button>
+        </div></td>
+      </tr>
+    `).join('');
+  }catch(err){ toast('Không tải được danh sách khách hàng: ' + err.message, true); }
+}
+let searchDebounce;
+document.getElementById('custSearch').addEventListener('input', () => { clearTimeout(searchDebounce); searchDebounce = setTimeout(loadCustomers, 350); });
+
+function escapeHtml(str){
+  const div = document.createElement('div'); div.textContent = str; return div.innerHTML;
+}
+
+let custCache = [];
+async function editCustomer(id){
+  const data = await api('/api/customers/' + id);
+  document.getElementById('custModalTitle').textContent = 'Sửa khách hàng';
+  document.getElementById('custId').value = data.id;
+  document.getElementById('custName').value = data.name;
+  document.getElementById('custPhone').value = data.phone;
+  document.getElementById('custEmail').value = data.email || '';
+  document.getElementById('custAddress').value = data.address || '';
+  document.getElementById('custModalOverlay').classList.add('show');
+}
+async function deleteCustomer(id){
+  if(!confirm('Xoá khách hàng này?')) return;
+  try{ await api('/api/customers/' + id, {method:'DELETE'}); toast('Đã xoá khách hàng'); loadCustomers(); }
+  catch(err){ toast(err.message, true); }
+}
+document.getElementById('custAddBtn').onclick = () => {
+  document.getElementById('custModalTitle').textContent = 'Thêm khách hàng';
+  document.getElementById('custId').value = '';
+  ['custName','custPhone','custEmail','custAddress'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('custModalOverlay').classList.add('show');
+};
+document.getElementById('custCancelBtn').onclick = () => document.getElementById('custModalOverlay').classList.remove('show');
+document.getElementById('custSaveBtn').onclick = async () => {
+  const id = document.getElementById('custId').value;
+  const payload = {
+    name: document.getElementById('custName').value.trim(),
+    phone: document.getElementById('custPhone').value.trim(),
+    email: document.getElementById('custEmail').value.trim() || null,
+    address: document.getElementById('custAddress').value.trim() || null,
+  };
+  if(!payload.name || !payload.phone){ toast('Vui lòng nhập tên và số điện thoại', true); return; }
+  try{
+    if(id){ await api('/api/customers/' + id, {method:'PUT', body:JSON.stringify(payload)}); toast('Đã cập nhật khách hàng'); }
+    else{ await api('/api/customers', {method:'POST', body:JSON.stringify(payload)}); toast('Đã thêm khách hàng'); }
+    document.getElementById('custModalOverlay').classList.remove('show');
+    loadCustomers();
+  }catch(err){ toast(err.message, true); }
+};
+
+/* ================= VIEW 4: DRIVERS CRUD ================= */
+async function loadDrivers(){
+  const status = document.getElementById('drvStatusFilter').value;
+  const vehicle = document.getElementById('drvVehicleFilter').value;
+  try{
+    const params = new URLSearchParams();
+    if(status) params.set('status', status);
+    if(vehicle) params.set('vehicle', vehicle);
+    const data = await api('/api/drivers' + (params.toString() ? '?' + params.toString() : ''));
+    document.getElementById('drvCount').textContent = `${data.count} tài xế`;
+    const tbody = document.getElementById('drvTbody');
+    const vehicleLabel = {bike:'Xe máy', car:'Ô tô', car7:'Ô tô 7 chỗ', truck:'Xe tải'};
+    const statusLabel = {online:'Online', offline:'Offline', busy:'Đang bận'};
+    if(data.data.length === 0){
+      tbody.innerHTML = '<tr><td colspan="7"><div class="empty-state">Chưa có tài xế nào.</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = data.data.map(d => `
+      <tr>
+        <td>${escapeHtml(d.name)}</td>
+        <td>${escapeHtml(d.phone)}</td>
+        <td>${vehicleLabel[d.vehicle] || d.vehicle}</td>
+        <td>${escapeHtml(d.plate)}</td>
+        <td>
+          <select class="status-select" onchange="updateDriverStatus('${d.id}', this.value)">
+            ${['online','offline','busy'].map(s => `<option value="${s}" ${s===d.status?'selected':''}>${statusLabel[s]}</option>`).join('')}
+          </select>
+        </td>
+        <td>⭐ ${d.rating}</td>
+        <td><div class="row-actions">
+          <button class="icon-btn" onclick="editDriver('${d.id}')" title="Sửa">✏️</button>
+          <button class="icon-btn danger" onclick="deleteDriver('${d.id}')" title="Xoá">🗑️</button>
+        </div></td>
+      </tr>
+    `).join('');
+  }catch(err){ toast('Không tải được danh sách tài xế: ' + err.message, true); }
+}
+document.getElementById('drvStatusFilter').onchange = loadDrivers;
+document.getElementById('drvVehicleFilter').onchange = loadDrivers;
+
+async function updateDriverStatus(id, status){
+  try{ await api(`/api/drivers/${id}/status`, {method:'PATCH', body:JSON.stringify({status})}); toast('Đã cập nhật trạng thái'); }
+  catch(err){ toast(err.message, true); loadDrivers(); }
+}
+async function editDriver(id){
+  const data = await api('/api/drivers/' + id);
+  document.getElementById('drvModalTitle').textContent = 'Sửa tài xế';
+  document.getElementById('drvId').value = data.id;
+  document.getElementById('drvName').value = data.name;
+  document.getElementById('drvPhone').value = data.phone;
+  document.getElementById('drvVehicle').value = data.vehicle;
+  document.getElementById('drvPlate').value = data.plate;
+  document.getElementById('drvLat').value = data.lat ?? '';
+  document.getElementById('drvLng').value = data.lng ?? '';
+  document.getElementById('drvModalOverlay').classList.add('show');
+}
+async function deleteDriver(id){
+  if(!confirm('Xoá tài xế này?')) return;
+  try{ await api('/api/drivers/' + id, {method:'DELETE'}); toast('Đã xoá tài xế'); loadDrivers(); }
+  catch(err){ toast(err.message, true); }
+}
+document.getElementById('drvAddBtn').onclick = () => {
+  document.getElementById('drvModalTitle').textContent = 'Thêm tài xế';
+  document.getElementById('drvId').value = '';
+  ['drvName','drvPhone','drvPlate','drvLat','drvLng'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('drvVehicle').value = 'bike';
+  document.getElementById('drvModalOverlay').classList.add('show');
+};
+document.getElementById('drvCancelBtn').onclick = () => document.getElementById('drvModalOverlay').classList.remove('show');
+document.getElementById('drvSaveBtn').onclick = async () => {
+  const id = document.getElementById('drvId').value;
+  const payload = {
+    name: document.getElementById('drvName').value.trim(),
+    phone: document.getElementById('drvPhone').value.trim(),
+    vehicle: document.getElementById('drvVehicle').value,
+    plate: document.getElementById('drvPlate').value.trim(),
+  };
+  const lat = document.getElementById('drvLat').value.trim();
+  const lng = document.getElementById('drvLng').value.trim();
+  if(!payload.name || !payload.phone || !payload.plate){ toast('Vui lòng nhập đầy đủ thông tin bắt buộc', true); return; }
+  try{
+    if(id){
+      await api('/api/drivers/' + id, {method:'PUT', body:JSON.stringify(payload)});
+      if(lat && lng) await api(`/api/drivers/${id}/location`, {method:'PATCH', body:JSON.stringify({lat:parseFloat(lat), lng:parseFloat(lng)})});
+      toast('Đã cập nhật tài xế');
+    }else{
+      if(lat) payload.lat = parseFloat(lat);
+      if(lng) payload.lng = parseFloat(lng);
+      await api('/api/drivers', {method:'POST', body:JSON.stringify(payload)});
+      toast('Đã thêm tài xế');
+    }
+    document.getElementById('drvModalOverlay').classList.remove('show');
+    loadDrivers();
+  }catch(err){ toast(err.message, true); }
+};
+
+/* ================= VIEW 5: TRIPS CRUD ================= */
+function isoToLocalInput(iso){ if(!iso) return ''; const d=new Date(iso); const off=d.getTimezoneOffset(); const local=new Date(d.getTime()-off*60000); return local.toISOString().slice(0,16); }
+function localInputToIso(val){ if(!val) return null; const d=new Date(val); return d.toISOString(); }
+
+let tripSearchDebounce;
+async function loadTrips(){
+  const q = document.getElementById('tripSearch').value.trim().toLowerCase();
+  try{
+    const [tripsRes, custRes, drvRes] = await Promise.all([api('/api/trips'), api('/api/customers'), api('/api/drivers')]);
+    const trips = tripsRes.data || [];
+    const custMap = Object.fromEntries((custRes.data||[]).map(c=>[c.id,c]));
+    const drvMap = Object.fromEntries((drvRes.data||[]).map(d=>[d.id,d]));
+    const filtered = q ? trips.filter(t => (t.id && t.id.toLowerCase().includes(q)) || (custMap[t.customerId] && custMap[t.customerId].name.toLowerCase().includes(q)) || (t.driverId && drvMap[t.driverId] && drvMap[t.driverId].name.toLowerCase().includes(q))) : trips;
+    document.getElementById('tripCount').textContent = `${filtered.length} chuyến`; 
+    const tbody = document.getElementById('tripTbody');
+    if(filtered.length === 0){ tbody.innerHTML = '<tr><td colspan="8"><div class="empty-state">Chưa có chuyến đi nào.</div></td></tr>'; return; }
+    tbody.innerHTML = filtered.map(t => `
+      <tr>
+        <td>${t.id}</td>
+        <td>${custMap[t.customerId] ? escapeHtml(custMap[t.customerId].name) : t.customerId}</td>
+        <td>${t.driverId ? (drvMap[t.driverId] ? escapeHtml(drvMap[t.driverId].name) : t.driverId) : '–'}</td>
+        <td>${t.price != null ? (t.price + ' đ') : '–'}</td>
+        <td>${t.timeStart ? new Date(t.timeStart).toLocaleString() : '–'}</td>
+        <td>${t.timeEnd ? new Date(t.timeEnd).toLocaleString() : '–'}</td>
+        <td>${escapeHtml(t.status || '–')}</td>
+        <td><div class="row-actions">
+          <button class="icon-btn" onclick="editTrip('${t.id}')" title="Sửa">✏️</button>
+          <button class="icon-btn danger" onclick="deleteTrip('${t.id}')" title="Xoá">🗑️</button>
+        </div></td>
+      </tr>
+    `).join('');
+  }catch(err){ toast('Không tải được danh sách chuyến: ' + err.message, true); }
+}
+document.getElementById('tripSearch').addEventListener('input', () => { clearTimeout(tripSearchDebounce); tripSearchDebounce = setTimeout(loadTrips, 350); });
+
+async function populateTripSelects(){
+  const [custRes, drvRes] = await Promise.all([api('/api/customers'), api('/api/drivers')]);
+  const custSel = document.getElementById('tripCustomer');
+  const drvSel = document.getElementById('tripDriver');
+  custSel.innerHTML = '';
+  (custRes.data||[]).forEach(c => { const opt = document.createElement('option'); opt.value = c.id; opt.textContent = c.name + ' · ' + (c.phone||''); custSel.appendChild(opt); });
+  drvSel.innerHTML = '<option value="">— Chọn tài xế —</option>';
+  (drvRes.data||[]).forEach(d => { const opt = document.createElement('option'); opt.value = d.id; opt.textContent = d.name + ' · ' + (d.plate||''); drvSel.appendChild(opt); });
+}
+
+async function editTrip(id){
+  await populateTripSelects();
+  const data = await api('/api/trips/' + id);
+  document.getElementById('tripModalTitle').textContent = 'Sửa chuyến đi';
+  document.getElementById('tripId').value = data.id;
+  document.getElementById('tripCustomer').value = data.customerId || '';
+  document.getElementById('tripDriver').value = data.driverId || '';
+  document.getElementById('tripPrice').value = data.price ?? '';
+  document.getElementById('tripStatus').value = data.status || 'requested';
+  document.getElementById('tripTimeStart').value = isoToLocalInput(data.timeStart);
+  document.getElementById('tripTimeEnd').value = isoToLocalInput(data.timeEnd);
+  document.getElementById('tripLatStart').value = data.latitudeStart ?? '';
+  document.getElementById('tripLngStart').value = data.longitudeStart ?? '';
+  document.getElementById('tripLatEnd').value = data.latitudeEnd ?? '';
+  document.getElementById('tripLngEnd').value = data.longitudeEnd ?? '';
+  document.getElementById('tripModalOverlay').classList.add('show');
+}
+
+async function deleteTrip(id){ if(!confirm('Xoá chuyến đi này?')) return; try{ await api('/api/trips/' + id, {method:'DELETE'}); toast('Đã xoá chuyến đi'); loadTrips(); } catch(err){ toast(err.message, true); } }
+
+document.getElementById('tripAddBtn').onclick = async () => { document.getElementById('tripModalTitle').textContent = 'Thêm chuyến đi'; document.getElementById('tripId').value = ''; ['tripPrice','tripTimeStart','tripTimeEnd','tripLatStart','tripLngStart','tripLatEnd','tripLngEnd'].forEach(id=>document.getElementById(id).value=''); await populateTripSelects(); document.getElementById('tripStatus').value='requested'; document.getElementById('tripModalOverlay').classList.add('show'); };
+document.getElementById('tripCancelBtn').onclick = () => document.getElementById('tripModalOverlay').classList.remove('show');
+document.getElementById('tripSaveBtn').onclick = async () => {
+  const id = document.getElementById('tripId').value;
+  const payload = {
+    customerId: document.getElementById('tripCustomer').value,
+    driverId: document.getElementById('tripDriver').value || null,
+    price: document.getElementById('tripPrice').value ? parseFloat(document.getElementById('tripPrice').value) : null,
+    status: document.getElementById('tripStatus').value,
+    timeStart: localInputToIso(document.getElementById('tripTimeStart').value),
+    timeEnd: localInputToIso(document.getElementById('tripTimeEnd').value),
+    latitudeStart: document.getElementById('tripLatStart').value ? parseFloat(document.getElementById('tripLatStart').value) : null,
+    longitudeStart: document.getElementById('tripLngStart').value ? parseFloat(document.getElementById('tripLngStart').value) : null,
+    latitudeEnd: document.getElementById('tripLatEnd').value ? parseFloat(document.getElementById('tripLatEnd').value) : null,
+    longitudeEnd: document.getElementById('tripLngEnd').value ? parseFloat(document.getElementById('tripLngEnd').value) : null,
+  };
+  if(!payload.customerId){ toast('Vui lòng chọn khách hàng', true); return; }
+  try{
+    if(id){ await api('/api/trips/' + id, {method:'PUT', body:JSON.stringify(payload)}); toast('Đã cập nhật chuyến đi'); }
+    else{ await api('/api/trips', {method:'POST', body:JSON.stringify(payload)}); toast('Đã thêm chuyến đi'); }
+    document.getElementById('tripModalOverlay').classList.remove('show'); loadTrips();
+  }catch(err){ toast(err.message, true); }
+};
+
+
+/* Close modals on overlay click */
+document.querySelectorAll('.modal-overlay').forEach(ov => {
+  ov.addEventListener('click', (e) => { if(e.target === ov) ov.classList.remove('show'); });
+});
+
+/* Try to center maps on user location initially */
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(pos => {
+    routeMap.setView([pos.coords.latitude, pos.coords.longitude], 14);
+    nearbyMap.setView([pos.coords.latitude, pos.coords.longitude], 14);
+  }, () => {});
+}
+</script>
+</body>
+</html>

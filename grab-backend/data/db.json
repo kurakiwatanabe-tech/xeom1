@@ -1,0 +1,116 @@
+{
+  "customers": [
+    {
+      "id": "cust_seed001",
+      "name": "Nguyễn Văn An",
+      "phone": "0901234567",
+      "email": "an.nguyen@example.com",
+      "address": "12 Hàng Bài, Hoàn Kiếm, Hà Nội",
+      "createdAt": "2026-06-01T02:00:00.000Z"
+    },
+    {
+      "id": "cust_seed002",
+      "name": "Trần Thị Bích",
+      "phone": "0912345678",
+      "email": "bich.tran@example.com",
+      "address": "45 Trần Hưng Đạo, Hai Bà Trưng, Hà Nội",
+      "createdAt": "2026-06-02T02:00:00.000Z"
+    },
+    {
+      "id": "cust_mraja2byh0ys1",
+      "name": "534534",
+      "phone": "45435435345",
+      "email": "534534",
+      "address": "543543",
+      "createdAt": "2026-07-07T10:56:17.230Z"
+    },
+    {
+      "id": "cust_mrajbqzv2hvta",
+      "name": "gdfg",
+      "phone": "df",
+      "email": "dfgdfg",
+      "address": "gffd",
+      "createdAt": "2026-07-07T10:57:35.851Z"
+    }
+  ],
+  "drivers": [
+    {
+      "id": "drv_seed001",
+      "name": "Lê Văn Cường",
+      "phone": "0987654321",
+      "vehicle": "car",
+      "plate": "30A-123.45",
+      "lat": 21.0245,
+      "lng": 105.8412,
+      "status": "online",
+      "rating": 4.8,
+      "createdAt": "2026-06-01T02:00:00.000Z"
+    },
+    {
+      "id": "drv_seed002",
+      "name": "Phạm Văn Dũng",
+      "phone": "0976543210",
+      "vehicle": "bike",
+      "plate": "29B1-678.90",
+      "lat": 21.0305,
+      "lng": 105.85,
+      "status": "online",
+      "rating": 4.6,
+      "createdAt": "2026-06-01T02:05:00.000Z"
+    },
+    {
+      "id": "drv_seed003",
+      "name": "Hoàng Thị Em",
+      "phone": "0965432109",
+      "vehicle": "bike",
+      "plate": "29C2-111.22",
+      "lat": 21.018,
+      "lng": 105.83,
+      "status": "offline",
+      "rating": 4.9,
+      "createdAt": "2026-06-01T02:10:00.000Z"
+    },
+    {
+      "id": "drv_seed004",
+      "name": "Vũ Văn Phong",
+      "phone": "0954321098",
+      "vehicle": "car7",
+      "plate": "30E-999.88",
+      "lat": 21.035,
+      "lng": 105.825,
+      "status": "busy",
+      "rating": 4.7,
+      "createdAt": "2026-06-01T02:15:00.000Z"
+    }
+  ],
+  "trips": [
+    {
+      "id": "trip_seed001",
+      "customerId": "cust_seed001",
+      "driverId": "drv_seed001",
+      "price": 120000,
+      "timeStart": "2026-07-07T08:00:00.000Z",
+      "timeEnd": "2026-07-07T08:25:00.000Z",
+      "latitudeStart": 21.0285,
+      "longitudeStart": 105.8542,
+      "latitudeEnd": 21.03,
+      "longitudeEnd": 105.86,
+      "status": "completed",
+      "createdAt": "2026-07-07T07:50:00.000Z"
+    },
+    {
+      "id": "trip_mrbx9kqkjwcya",
+      "customerId": "cust_seed002",
+      "driverId": "drv_seed001",
+      "price": null,
+      "timeStart": null,
+      "timeEnd": null,
+      "latitudeStart": null,
+      "longitudeStart": null,
+      "latitudeEnd": null,
+      "longitudeEnd": null,
+      "status": "ongoing",
+      "createdAt": "2026-07-08T10:15:35.228Z"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "apiBase": "http://192.168.24.118:3000",
+  "osrmBase": "https://router.project-osrm.org",
+  "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  "userAgent": "com.example.driver"
+}

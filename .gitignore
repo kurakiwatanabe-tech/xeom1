@@ -1,0 +1,70 @@
+# ==========================================
+# Java & Spring Boot Rules
+# ==========================================
+# Compiled class files
+*.class
+*.log
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Spring Boot / Maven / Gradle
+target/
+build/
+.gradle/
+.mtj.tmp/
+hs_err_pid*
+
+# ==========================================
+# Flutter Rules
+# ==========================================
+# Flutter/Dart generated files
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+pubspec.lock
+build/
+tools/
+.symlinks/
+
+# OS X / Windows generated files
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# ==========================================
+# IDE & System Files
+# ==========================================
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+.classpath
+.project
+.settings/
+
+# Visual Studio Code
+.vscode/
+.vscode/*
+.ccls-cache/
+.code-workspace
+
+# Sensitive Data / Local configs
+.env
+*.properties.local
+
+# Google Cloud Service Account Credentials
+
+*.pbf
+xeom-firebase-adminsdk.json
+google-services.json

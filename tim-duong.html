@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tìm đường & Đo khoảng cách</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root{
+    --ink: #0B1D14;
+    --paper: #F6F5F0;
+    --grab-green: #00B14F;
+    --grab-green-dark: #00893D;
+    --line: #E1DFD6;
+    --muted: #6B7268;
+    --card: #FFFFFF;
+    --accent-warn: #E6592E;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--paper);color:var(--ink);}
+  #app{position:relative;width:100%;height:100vh;overflow:hidden;}
+  #map{position:absolute;inset:0;z-index:0;}
+
+  .panel{
+    position:absolute;top:16px;left:16px;
+    width:340px;max-width:calc(100vw - 32px);
+    background:var(--card);
+    border-radius:16px;
+    box-shadow:0 10px 30px rgba(11,29,20,0.18);
+    z-index:10;
+    overflow:hidden;
+  }
+  .panel-header{
+    padding:16px 18px 8px;
+    display:flex;align-items:center;gap:10px;
+  }
+  .logo-dot{width:10px;height:10px;border-radius:50%;background:var(--grab-green);flex-shrink:0;}
+  .panel-header h1{font-size:15px;font-weight:700;margin:0;letter-spacing:.2px;}
+
+  .field-group{padding:6px 14px 14px;position:relative;}
+  .field-row{
+    display:flex;align-items:center;gap:10px;
+    background:var(--paper);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:10px 12px;
+    margin-bottom:8px;
+    transition:border-color .15s;
+  }
+  .field-row:focus-within{border-color:var(--grab-green);}
+  .field-row .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .dot.from{background:var(--grab-green);}
+  .dot.to{background:var(--ink);border-radius:2px;}
+  .field-row input{
+    border:none;background:transparent;outline:none;
+    font-size:14px;width:100%;color:var(--ink);
+  }
+  .field-row input::placeholder{color:var(--muted);}
+  .swap-btn{
+    position:absolute;right:22px;top:36px;
+    width:28px;height:28px;border-radius:50%;
+    background:var(--card);border:1px solid var(--line);
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;font-size:13px;color:var(--muted);
+    z-index:2;
+  }
+  .swap-btn:hover{color:var(--grab-green);border-color:var(--grab-green);}
+
+  .suggestions{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    margin:-4px 0 8px;
+    max-height:160px;overflow-y:auto;
+    display:none;
+  }
+  .suggestions.show{display:block;}
+  .suggestion-item{
+    padding:9px 12px;font-size:13px;cursor:pointer;
+    border-bottom:1px solid var(--line);color:var(--ink);
+  }
+  .suggestion-item:last-child{border-bottom:none;}
+  .suggestion-item:hover{background:var(--paper);}
+
+  .find-btn{
+    width:calc(100% - 28px);
+    margin:2px 14px 14px;
+    background:var(--grab-green);
+    color:white;border:none;border-radius:10px;
+    padding:11px;font-size:14px;font-weight:700;
+    cursor:pointer;transition:background .15s;
+  }
+  .find-btn:hover{background:var(--grab-green-dark);}
+  .find-btn:disabled{background:var(--line);color:var(--muted);cursor:not-allowed;}
+
+  .hint{padding:0 18px 14px;font-size:12px;color:var(--muted);line-height:1.5;}
+
+  .result-card{
+    position:absolute;left:16px;bottom:16px;
+    width:340px;max-width:calc(100vw - 32px);
+    background:var(--card);
+    border-radius:16px;
+    box-shadow:0 10px 30px rgba(11,29,20,0.18);
+    padding:16px 18px;
+    z-index:10;
+    display:none;
+  }
+  .result-card.show{display:block;}
+  .result-top{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;}
+  .result-dist{font-size:26px;font-weight:800;color:var(--ink);}
+  .result-unit{font-size:13px;color:var(--muted);}
+  .result-time{font-size:13px;color:var(--muted);margin-bottom:10px;}
+  .result-route{font-size:12px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px;line-height:1.6;}
+  .result-route b{color:var(--ink);}
+
+  .mode-tabs{display:flex;gap:6px;padding:0 14px 10px;}
+  .mode-tab{
+    flex:1;padding:7px 4px;text-align:center;font-size:12px;font-weight:600;
+    border-radius:8px;border:1px solid var(--line);background:var(--card);
+    cursor:pointer;color:var(--muted);
+  }
+  .mode-tab.active{background:var(--ink);color:white;border-color:var(--ink);}
+
+  .status{
+    position:absolute;top:16px;right:16px;z-index:10;
+    background:var(--card);padding:8px 14px;border-radius:10px;
+    font-size:12px;color:var(--muted);box-shadow:0 6px 16px rgba(11,29,20,0.12);
+    display:none;
+  }
+  .status.show{display:block;}
+
+  @media (max-width:480px){
+    .panel,.result-card{width:calc(100vw - 24px);left:12px;}
+    .result-card{bottom:12px;}
+    .panel{top:12px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"></div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div class="logo-dot"></div>
+      <h1>Tìm đường & đo khoảng cách</h1>
+    </div>
+    <div class="field-group">
+      <div class="field-row">
+        <div class="dot from"></div>
+        <input id="fromInput" type="text" placeholder="Điểm đi (vd: Hồ Gươm, Hà Nội)" autocomplete="off">
+      </div>
+      <div class="suggestions" id="fromSuggest"></div>
+      <div class="field-row">
+        <div class="dot to"></div>
+        <input id="toInput" type="text" placeholder="Điểm đến (vd: Sân bay Nội Bài)" autocomplete="off">
+      </div>
+      <div class="suggestions" id="toSuggest"></div>
+      <div class="swap-btn" id="swapBtn" title="Đổi chiều">⇅</div>
+    </div>
+    <div class="mode-tabs">
+      <div class="mode-tab active" data-mode="driving">🚗 Lái xe</div>
+      <div class="mode-tab" data-mode="cycling">🚴 Xe đạp</div>
+      <div class="mode-tab" data-mode="foot">🚶 Đi bộ</div>
+    </div>
+    <button class="find-btn" id="findBtn" disabled>Tìm đường</button>
+    <div class="hint">💡 Nhấp vào bản đồ cũng để chọn điểm đi/điểm đến. Dữ liệu: OpenStreetMap + OSRM (miễn phí).</div>
+  </div>
+
+  <div class="status" id="status">Đang tải...</div>
+
+  <div class="result-card" id="resultCard">
+    <div class="result-top">
+      <div class="result-dist" id="resultDist">–</div>
+      <div class="result-unit">km</div>
+    </div>
+    <div class="result-time" id="resultTime">–</div>
+    <div class="result-route" id="resultRoute"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const map = L.map('map', {zoomControl:false}).setView([21.0285, 105.8542], 13);
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let fromLatLng = null, toLatLng = null;
+let fromMarker = null, toMarker = null;
+let routeLine = null;
+let pickMode = 'from'; // which input the next map click fills
+let mode = 'driving';
+
+const fromInput = document.getElementById('fromInput');
+const toInput = document.getElementById('toInput');
+const fromSuggest = document.getElementById('fromSuggest');
+const toSuggest = document.getElementById('toSuggest');
+const findBtn = document.getElementById('findBtn');
+const statusEl = document.getElementById('status');
+const resultCard = document.getElementById('resultCard');
+
+function showStatus(msg){
+  statusEl.textContent = msg;
+  statusEl.classList.add('show');
+}
+function hideStatus(){ statusEl.classList.remove('show'); }
+
+const greenIcon = L.divIcon({className:'', html:'<div style="width:16px;height:16px;border-radius:50%;background:#00B14F;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize:[16,16], iconAnchor:[8,8]});
+const blackIcon = L.divIcon({className:'', html:'<div style="width:16px;height:16px;border-radius:4px;background:#0B1D14;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3);"></div>', iconSize:[16,16], iconAnchor:[8,8]});
+
+function setFrom(lat, lng, label){
+  fromLatLng = [lat, lng];
+  if(fromMarker) map.removeLayer(fromMarker);
+  fromMarker = L.marker([lat,lng], {icon:greenIcon}).addTo(map);
+  if(label) fromInput.value = label;
+  checkReady();
+}
+function setTo(lat, lng, label){
+  toLatLng = [lat, lng];
+  if(toMarker) map.removeLayer(toMarker);
+  toMarker = L.marker([lat,lng], {icon:blackIcon}).addTo(map);
+  if(label) toInput.value = label;
+  checkReady();
+}
+function checkReady(){
+  findBtn.disabled = !(fromLatLng && toLatLng);
+}
+
+// Click on map to set points
+map.on('click', function(e){
+  const {lat, lng} = e.latlng;
+  if(pickMode === 'from'){
+    setFrom(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    pickMode = 'to';
+  } else {
+    setTo(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+    pickMode = 'from';
+  }
+});
+
+// --- Geocoding search (Nominatim, free) ---
+let searchTimeout = null;
+function setupSearch(input, suggestBox, onPick){
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    const q = input.value.trim();
+    if(q.length < 3){ suggestBox.classList.remove('show'); return; }
+    searchTimeout = setTimeout(() => doSearch(q, suggestBox, onPick), 400);
+  });
+  input.addEventListener('focus', () => {
+    if(suggestBox.children.length > 0) suggestBox.classList.add('show');
+  });
+}
+
+async function doSearch(query, suggestBox, onPick){
+  try{
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`;
+    const res = await fetch(url, {headers:{'Accept-Language':'vi'}});
+    const data = await res.json();
+    suggestBox.innerHTML = '';
+    if(data.length === 0){ suggestBox.classList.remove('show'); return; }
+    data.forEach(place => {
+      const div = document.createElement('div');
+      div.className = 'suggestion-item';
+      div.textContent = place.display_name;
+      div.onclick = () => {
+        onPick(parseFloat(place.lat), parseFloat(place.lon), place.display_name);
+        suggestBox.classList.remove('show');
+        suggestBox.innerHTML = '';
+      };
+      suggestBox.appendChild(div);
+    });
+    suggestBox.classList.add('show');
+  }catch(err){
+    console.error(err);
+  }
+}
+
+setupSearch(fromInput, fromSuggest, (lat,lng,label) => { setFrom(lat,lng,label); map.setView([lat,lng], 14); });
+setupSearch(toInput, toSuggest, (lat,lng,label) => { setTo(lat,lng,label); map.setView([lat,lng], 14); });
+
+document.addEventListener('click', (e) => {
+  if(!fromInput.contains(e.target) && !fromSuggest.contains(e.target)) fromSuggest.classList.remove('show');
+  if(!toInput.contains(e.target) && !toSuggest.contains(e.target)) toSuggest.classList.remove('show');
+});
+
+// Swap
+document.getElementById('swapBtn').onclick = () => {
+  const tmpLL = fromLatLng; fromLatLng = toLatLng; toLatLng = tmpLL;
+  const tmpVal = fromInput.value; fromInput.value = toInput.value; toInput.value = tmpVal;
+  const tmpMarker = fromMarker; fromMarker = toMarker; toMarker = tmpMarker;
+  if(fromMarker) fromMarker.setIcon(greenIcon);
+  if(toMarker) toMarker.setIcon(blackIcon);
+  checkReady();
+};
+
+// Mode tabs
+document.querySelectorAll('.mode-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    mode = tab.dataset.mode;
+    if(fromLatLng && toLatLng && routeLine) findRoute();
+  };
+});
+
+// --- Routing via OSRM public demo server (free) ---
+async function findRoute(){
+  if(!fromLatLng || !toLatLng) return;
+  showStatus('Đang tìm đường...');
+  findBtn.disabled = true;
+
+  const profile = mode === 'driving' ? 'driving' : (mode === 'cycling' ? 'cycling' : 'foot');
+  const coords = `${fromLatLng[1]},${fromLatLng[0]};${toLatLng[1]},${toLatLng[0]}`;
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson`;
+
+  try{
+    const res = await fetch(url);
+    const data = await res.json();
+    if(data.code !== 'Ok' || !data.routes || data.routes.length === 0){
+      hideStatus();
+      findBtn.disabled = false;
+      alert('Không tìm được đường đi giữa hai điểm này. Thử điểm khác nhé.');
+      return;
+    }
+    const route = data.routes[0];
+    drawRoute(route);
+    showResult(route);
+  }catch(err){
+    console.error(err);
+    alert('Lỗi khi gọi dịch vụ tìm đường. Vui lòng thử lại.');
+  }finally{
+    hideStatus();
+    findBtn.disabled = false;
+  }
+}
+
+function drawRoute(route){
+  if(routeLine) map.removeLayer(routeLine);
+  const latlngs = route.geometry.coordinates.map(c => [c[1], c[0]]);
+  routeLine = L.polyline(latlngs, {color:'#00B14F', weight:5, opacity:0.85}).addTo(map);
+  map.fitBounds(routeLine.getBounds(), {padding:[60,60]});
+}
+
+function showResult(route){
+  const km = (route.distance / 1000).toFixed(2);
+  const mins = Math.round(route.duration / 60);
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  const timeStr = hrs > 0 ? `${hrs} giờ ${remMins} phút` : `${mins} phút`;
+
+  const modeLabel = mode === 'driving' ? 'Lái xe' : (mode === 'cycling' ? 'Xe đạp' : 'Đi bộ');
+
+  document.getElementById('resultDist').textContent = km;
+  document.getElementById('resultTime').textContent = `⏱ Khoảng ${timeStr} · ${modeLabel}`;
+  document.getElementById('resultRoute').innerHTML =
+    `<b>Từ:</b> ${fromInput.value || 'Điểm đã chọn'}<br><b>Đến:</b> ${toInput.value || 'Điểm đã chọn'}`;
+  resultCard.classList.add('show');
+}
+
+findBtn.onclick = findRoute;
+
+// Try to center on user's location if available
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(
+    pos => map.setView([pos.coords.latitude, pos.coords.longitude], 14),
+    () => {} // silent fail, keep default view
+  );
+}
+</script>
+</body>
+</html>
