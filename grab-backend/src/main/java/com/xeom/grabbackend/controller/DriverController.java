@@ -59,7 +59,7 @@ public class DriverController {
 
     @GetMapping("/nearby")
     public Map<String, Object> nearby(@RequestParam(name = "lat") double lat, @RequestParam(name = "lng") double lng,
-                                      @RequestParam(name = "radius_km", defaultValue = "5") double radius_km,
+                                      @RequestParam(name = "radius_km", defaultValue = "10") double radius_km,
                                       @RequestParam(name = "limit", defaultValue = "10") int limit,
                                       @RequestParam(name = "vehicle", required = false) String vehicle,
                                       @RequestParam(name = "status", defaultValue = "AVAILABLE") String status) {
@@ -80,7 +80,19 @@ public class DriverController {
 
     @GetMapping("/by-phone/{phone}")
     public Driver getByPhone(@PathVariable("phone") @NonNull String phone) {
-        return rideDataService.findDriverByPhone(phone).orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế với số điện thoại: " + phone));
+        Driver driver = rideDataService.findDriverByPhone(phone).orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế với số điện thoại: " + phone));
+
+        // When a driver logs in via phone lookup, mark them as AVAILABLE if they are not currently ON_TRIP
+        try {
+            if (driver.getStatus() == null || driver.getStatus().isBlank() || DriverStatus.OFFLINE.name().equals(driver.getStatus())) {
+                rideDataService.updateDriverStatus(driver.getId(), DriverStatus.AVAILABLE.name());
+                driver.setStatus(DriverStatus.AVAILABLE.name());
+            }
+        } catch (Exception e) {
+            // ignore failures to update status during login; still return driver info
+        }
+
+        return driver;
     }
 
     @PostMapping

@@ -1,5 +1,6 @@
 package com.xeom.grabbackend.model;
 
+import java.util.Arrays;
 import java.util.Locale;
 
 public enum DriverStatus {
@@ -17,12 +18,29 @@ public enum DriverStatus {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Driver status must not be blank");
         }
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        String raw = value.trim();
+        String normalized = raw.toUpperCase(Locale.ROOT);
+
+        // direct enum name match
         for (DriverStatus status : values()) {
             if (status.name().equals(normalized)) {
                 return status;
             }
         }
-        throw new IllegalArgumentException("Unsupported driver status: " + value);
+
+        // friendly / localized aliases
+        String lower = raw.toLowerCase(Locale.ROOT).strip();
+        return switch (lower) {
+            case "nhận chuyến", "nhan chuyen", "nhan-chuyen", "nhận-chuyến" -> ACCEPT;
+            case "nhận", "nhan" -> ACCEPT;
+            case "available", "có sẵn", "co san", "san" -> AVAILABLE;
+            case "online", "onlin" -> ONLINE;
+            case "offline", "off" -> OFFLINE;
+            default -> throw new IllegalArgumentException("Unsupported driver status: " + value);
+        };
+    }
+    public static boolean isValid(String text) {
+        return Arrays.stream(DriverStatus.values())
+                     .anyMatch(e -> e.name().equalsIgnoreCase(text)); // Case-insensitive
     }
 }

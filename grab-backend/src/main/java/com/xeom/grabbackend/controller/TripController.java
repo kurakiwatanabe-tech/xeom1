@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +25,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.xeom.grabbackend.model.Driver;
+import com.xeom.grabbackend.model.DriverStatus;
 import com.xeom.grabbackend.model.Trip;
 import com.xeom.grabbackend.service.FirebaseNotificationService;
 import com.xeom.grabbackend.service.RideDataService;
@@ -35,7 +35,6 @@ import com.xeom.grabbackend.service.RideDataService;
 @CrossOrigin(origins = "*")
 public class TripController {
     private static final Logger log = LoggerFactory.getLogger(TripController.class);
-    private static final Set<String> VALID_STATUSES = Set.of("requested", "ongoing", "completed", "cancelled");
 
     private final RideDataService rideDataService;
     private final FirebaseNotificationService firebaseNotificationService;
@@ -107,8 +106,8 @@ public class TripController {
             Double lngObj = trip.getLongitudeStart();
             double lat = latObj == null ? 0.0 : latObj.doubleValue();
             double lng = lngObj == null ? 0.0 : lngObj.doubleValue();
-            log.debug("Searching for nearby drivers at lat={}, lng={}, radius=5km", lat, lng);
-            List<Map<String, Object>> candidates = rideDataService.findNearbyDrivers(lat, lng, 5.0, 10, null, "online");
+            log.debug("Searching for nearby drivers at lat={}, lng={}, radius=10km", lat, lng);
+            List<Map<String, Object>> candidates = rideDataService.findNearbyDrivers(lat, lng, 10, 10, null, "AVAILABLE");
             log.debug("Found {} nearby drivers", candidates.size());
             if (!candidates.isEmpty()) {
                 Object idObj = candidates.get(0).get("id");
@@ -137,10 +136,10 @@ public class TripController {
                         Map<String, String> data = new LinkedHashMap<>();
                         data.put("tripId", saved.getId());
                         data.put("customerId", saved.getCustomerId());
-                        //data.put("lat", String.valueOf(saved.getLatitudeStart()));
-                        //data.put("lng", String.valueOf(saved.getLongitudeStart()));
-                        data.put("lat", "37.42132786690192");
-                        data.put("lng", "-122.1361437329108");
+                        data.put("lat", String.valueOf(saved.getLatitudeStart()));
+                        data.put("lng", String.valueOf(saved.getLongitudeStart()));
+                       // data.put("lat", "37.42132786690192");
+                        //data.put("lng", "-122.1361437329108");
                         // 37.42132786690192, -122.1361437329108
                         // 3375 El Camino Real, Palo Alto, CA 94306, United States
                         log.info("Sending FCM notification to driver {} about trip {}", drv.getId(), saved.getId());
@@ -173,7 +172,7 @@ public class TripController {
         if (payload.getDriverId() != null && !payload.getDriverId().isBlank() && rideDataService.findDriver(Objects.requireNonNull(payload.getDriverId())).isEmpty()) {
             throw new BadRequestException("driverId không hợp lệ");
         }
-        if (payload.getStatus() != null && !VALID_STATUSES.contains(payload.getStatus())) {
+        if (payload.getStatus() != null && !DriverStatus.isValid(payload.getStatus())) {
             throw new BadRequestException("status phải là một trong: requested, ongoing, completed, cancelled");
         }
         if (payload.getCustomerId() != null) existing.setCustomerId(payload.getCustomerId());

@@ -12,6 +12,8 @@ import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'config.dart';
 import 'login_page.dart';
+import 'package:provider/provider.dart';
+import 'providers/driver_provider.dart';
 
 String get backendBaseUrl => AppConfig.apiBase;
 
@@ -29,7 +31,12 @@ Future<void> main() async {
   await AppConfig.load();
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   log('Driver app started', name: 'driver_app');
-  runApp(const DriverApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => DriverProvider(),
+      child: const DriverApp(),
+    ),
+  );
 }
 
 class DriverApp extends StatelessWidget {
@@ -50,7 +57,12 @@ class DriverApp extends StatelessWidget {
                   as Map<String, dynamic>?;
           final driverId = args?['id'] as String? ?? '';
           final driverName = args?['name'] as String? ?? 'Tài xế';
-          return DriverHomePage(driverId: driverId, driverName: driverName);
+          final driverStatus = args?['status'] as String? ?? '';
+          return DriverHomePage(
+            driverId: driverId,
+            driverName: driverName,
+            driverStatus: driverStatus,
+          );
         },
       },
     );
@@ -60,11 +72,13 @@ class DriverApp extends StatelessWidget {
 class DriverHomePage extends StatefulWidget {
   final String driverId;
   final String driverName;
+  final String? driverStatus;
 
   const DriverHomePage({
     super.key,
     required this.driverId,
     required this.driverName,
+    this.driverStatus,
   });
 
   @override
@@ -78,6 +92,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
   bool _sendingLocation = false;
   bool _routing = false;
   String? _statusMessage;
+  String _driverStatus = '';
   final MapController _mapController = MapController();
   StreamSubscription<RemoteMessage>? _fcmSubscription;
   Timer? _gpsRefreshTimer;
@@ -88,6 +103,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
   @override
   void initState() {
     super.initState();
+    // initial value kept in _driverStatus; provider values will be used when available
+    _driverStatus = widget.driverStatus ?? '';
     WidgetsBinding.instance.addPostFrameCallback((_) => _determinePosition());
     _gpsRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
@@ -150,6 +167,35 @@ class _DriverHomePageState extends State<DriverHomePage> {
         ),
       );
     });
+  }
+
+  String _driverIdValue() {
+    try {
+      final provider = Provider.of<DriverProvider>(context, listen: false);
+      return provider.id.isNotEmpty ? provider.id : widget.driverId;
+    } catch (_) {
+      return widget.driverId;
+    }
+  }
+
+  String _driverNameValue() {
+    try {
+      final provider = Provider.of<DriverProvider>(context, listen: false);
+      return provider.name.isNotEmpty ? provider.name : widget.driverName;
+    } catch (_) {
+      return widget.driverName;
+    }
+  }
+
+  String _driverStatusValue() {
+    try {
+      final provider = Provider.of<DriverProvider>(context);
+      return provider.status.isNotEmpty
+          ? provider.status
+          : (widget.driverStatus ?? _driverStatus);
+    } catch (_) {
+      return widget.driverStatus ?? _driverStatus;
+    }
   }
 
   @override
@@ -227,12 +273,11 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   Future<void> _sendHeartbeat() async {
-    if (_position == null || widget.driverId.isEmpty) return;
+    final id = _driverIdValue();
+    if (_position == null || id.isEmpty) return;
     try {
-      final uri = Uri.parse(
-        '$backendBaseUrl/api/drivers/${widget.driverId}/heartbeat',
-      );
-      await http
+      final uri = Uri.parse('$backendBaseUrl/api/drivers/$id/heartbeat');
+      final resp = await http
           .post(
             uri,
             headers: {'Content-Type': 'application/json'},
@@ -243,6 +288,16 @@ class _DriverHomePageState extends State<DriverHomePage> {
             }),
           )
           .timeout(const Duration(seconds: 8));
+
+      if (resp.statusCode == 200) {
+        final Map<String, dynamic> body =
+            jsonDecode(resp.body) as Map<String, dynamic>;
+        final status = (body['status'] ?? '').toString();
+        if (status.isNotEmpty && status != _driverStatus) {
+          if (!mounted) return;
+          setState(() => _driverStatus = status);
+        }
+      }
     } catch (e) {
       log('Heartbeat failed: $e', name: 'driver_app');
     }
@@ -334,7 +389,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
           .put(
             updateUri,
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'driverId': widget.driverId, 'status': 'ACCEPT'}),
+            body: jsonEncode({
+              'driverId': _driverIdValue(),
+              'status': 'ACCEPT',
+            }),
           )
           .timeout(const Duration(seconds: 10));
 
@@ -445,7 +503,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('Driver Map - ${widget.driverName}'),
+        title: Text(
+          'Driver - ${_driverNameValue()}${_driverStatusValue().isNotEmpty ? ' - ${_driverStatusValue()}' : ''}',
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.search),

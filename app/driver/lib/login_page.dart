@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'config.dart';
+import 'package:provider/provider.dart';
+import 'providers/driver_provider.dart';
 
 String get backendBaseUrl => AppConfig.apiBase;
 
@@ -52,6 +54,12 @@ class _LoginPageState extends State<LoginPage> {
         final driver = jsonDecode(response.body) as Map<String, dynamic>;
         log('Driver login success: ${driver['name']}', name: 'driver_app');
         await _registerFcmToken(driver['id'].toString());
+        try {
+          final provider = Provider.of<DriverProvider>(context, listen: false);
+          provider.setFromMap(driver);
+        } catch (_) {
+          // ignore if provider not available for some reason
+        }
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Đăng nhập thành công: ${driver['name']}')),
