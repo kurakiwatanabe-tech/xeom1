@@ -66,9 +66,7 @@ class LoginGate extends StatelessWidget {
     return CustomerLoginPage(
       onLoggedIn: (customer) {
         Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (_) => HomePage(customer: customer),
-          ),
+          MaterialPageRoute(builder: (_) => HomePage(customer: customer)),
         );
       },
     );
@@ -231,8 +229,9 @@ class CustomerLoginPage extends StatefulWidget {
 }
 
 class _CustomerLoginPageState extends State<CustomerLoginPage> {
-  final TextEditingController _phoneController =
-      TextEditingController(text: '0901234567');
+  final TextEditingController _phoneController = TextEditingController(
+    text: '0901234567',
+  );
   bool _loading = false;
 
   @override
@@ -259,9 +258,9 @@ class _CustomerLoginPageState extends State<CustomerLoginPage> {
       widget.onLoggedIn(customer);
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không thể tìm khách hàng: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Không thể tìm khách hàng: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -422,7 +421,9 @@ class _HomePageState extends State<HomePage> {
   Future<void> _bookRide() async {
     if (_customer == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng đăng nhập khách hàng trước khi đặt xe.')),
+        const SnackBar(
+          content: Text('Vui lòng đăng nhập khách hàng trước khi đặt xe.'),
+        ),
       );
       return;
     }
@@ -440,6 +441,8 @@ class _HomePageState extends State<HomePage> {
   Future<void> _submitTrip() async {
     final longitudeStart = _origin!.longitude;
     final latitudeStart = _origin!.latitude;
+    final longitudeEnd = _destination!.longitude;
+    final latitudeEnd = _destination!.latitude;
     final distance = _routeDistanceKm;
     final price = (distance * 10000).round();
 
@@ -454,23 +457,27 @@ class _HomePageState extends State<HomePage> {
           'addressEnd': _toController.text.trim(),
           'longitudeStart': longitudeStart,
           'latitudeStart': latitudeStart,
+          'longitudeEnd': longitudeEnd,
+          'latitudeEnd': latitudeEnd,
           'distance': distance,
         }),
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
-        throw Exception('Trip request failed with status ${response.statusCode}.');
+        throw Exception(
+          'Trip request failed with status ${response.statusCode}.',
+        );
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đặt xe thành công!')), 
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đặt xe thành công!')));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không thể đặt xe: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Không thể đặt xe: $e')));
     }
   }
 
@@ -555,8 +562,7 @@ class _HomePageState extends State<HomePage> {
         _destination = destinationPoint;
         _routePoints = points;
         _routeDistanceKm = distanceKm;
-        _routeInfo =
-            'Shortest route: ${distanceKm.toStringAsFixed(1)} km';
+        _routeInfo = 'Shortest route: ${distanceKm.toStringAsFixed(1)} km';
       });
 
       final bounds = LatLngBounds.fromPoints(points);
@@ -745,57 +751,57 @@ class _HomePageState extends State<HomePage> {
             bottom: 24,
             child: MapZoomControls(mapController: _mapController),
           ),
-          Positioned(
-            left: 16,
-            right: 16,
-            bottom: 132,
-            child: Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.95),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _loading
-                        ? 'Getting your location...'
-                        : _position == null
-                        ? 'Tap the button to get GPS'
-                        : 'Current location',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 6),
-                  if (_position != null) ...[
-                    Text('Latitude: ${_position!.latitude.toStringAsFixed(6)}'),
-                    Text(
-                      'Longitude: ${_position!.longitude.toStringAsFixed(6)}',
-                    ),
-                  ],
-                  if (_address.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(_address),
-                    ),
-                ],
-              ),
-            ),
-          ),
+          // Positioned(
+          //   left: 16,
+          //   right: 16,
+          //   bottom: 132,
+          //   child: Container(
+          //     padding: const EdgeInsets.all(12),
+          //     decoration: BoxDecoration(
+          //       color: Colors.white.withValues(alpha: 0.95),
+          //       borderRadius: BorderRadius.circular(12),
+          //       boxShadow: [
+          //         BoxShadow(
+          //           color: Colors.black.withValues(alpha: 0.15),
+          //           blurRadius: 8,
+          //           offset: const Offset(0, 2),
+          //         ),
+          //       ],
+          //     ),
+          //     child: Column(
+          //       crossAxisAlignment: CrossAxisAlignment.start,
+          //       children: [
+          //         Text(
+          //           _loading
+          //               ? 'Getting your location...'
+          //               : _position == null
+          //               ? 'Tap the button to get GPS'
+          //               : 'Current location',
+          //           style: Theme.of(context).textTheme.titleMedium,
+          //         ),
+          //         const SizedBox(height: 6),
+          //         if (_position != null) ...[
+          //           Text('Latitude: ${_position!.latitude.toStringAsFixed(6)}'),
+          //           Text(
+          //             'Longitude: ${_position!.longitude.toStringAsFixed(6)}',
+          //           ),
+          //         ],
+          //         if (_address.isNotEmpty)
+          //           Padding(
+          //             padding: const EdgeInsets.only(top: 6),
+          //             child: Text(_address),
+          //           ),
+          //       ],
+          //     ),
+          //   ),
+          // ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _loading ? null : _getLocation,
-        icon: const Icon(Icons.my_location),
-        label: const Text('Get GPS'),
-      ),
+      // floatingActionButton: FloatingActionButton.extended(
+      //   onPressed: _loading ? null : _getLocation,
+      //   icon: const Icon(Icons.my_location),
+      //   label: const Text('Get GPS'),
+      // ),
     );
   }
 }

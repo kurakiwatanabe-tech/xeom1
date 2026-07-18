@@ -99,6 +99,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
   Timer? _heartbeatTimer;
   List<LatLng> _routePoints = <LatLng>[];
   LatLng? _destinationPoint;
+  LatLng? _pickupPoint;
+  String? _activeTripId;
 
   @override
   void initState() {
@@ -125,6 +127,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
       final customerId = message.data['customerId'];
       final lat = message.data['lat'];
       final lng = message.data['lng'];
+      final latD = message.data['latD'];
+      final lngD = message.data['lngD'];
       final tripId = message.data['tripId'];
       final details = <String>[];
       if (tripId != null && tripId.isNotEmpty) {
@@ -136,9 +140,14 @@ class _DriverHomePageState extends State<DriverHomePage> {
       if (lat != null && lat.isNotEmpty && lng != null && lng.isNotEmpty) {
         details.add('Pickup: $lat, $lng');
       }
+      if (latD != null && latD.isNotEmpty && lngD != null && lngD.isNotEmpty) {
+        details.add('Destination: $latD, $lngD');
+      }
       final contentText = [if (body.isNotEmpty) body, ...details].join('\n');
       final pickupLat = double.tryParse(lat ?? '');
       final pickupLng = double.tryParse(lng ?? '');
+      final destinationLat = double.tryParse(latD ?? '');
+      final destinationLng = double.tryParse(lngD ?? '');
       if (!mounted) return;
       showDialog<void>(
         context: context,
@@ -155,6 +164,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
                   _handleTripAccept(
                     pickupLat: pickupLat,
                     pickupLng: pickupLng,
+                    destinationLat: destinationLat ?? 0.0,
+                    destinationLng: destinationLng ?? 0.0,
                     tripId: tripId,
                   );
                 } else {
@@ -207,10 +218,9 @@ class _DriverHomePageState extends State<DriverHomePage> {
   }
 
   Future<void> _determinePosition() async {
-    log('Starting GPS detection', name: 'driver_app');
+    //log('Starting GPS detection', name: 'driver_app');
     setState(() {
       _loading = true;
-      _statusMessage = null;
     });
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -239,10 +249,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.best,
       );
-      log(
-        'GPS position resolved: ${pos.latitude}, ${pos.longitude}',
-        name: 'driver_app',
-      );
+      // log(
+      //   'GPS position resolved: ${pos.latitude}, ${pos.longitude}',
+      //   name: 'driver_app',
+      // );
       final placemarks = await geocoding.Geocoding().placemarkFromCoordinates(
         pos.latitude,
         pos.longitude,
@@ -300,6 +310,44 @@ class _DriverHomePageState extends State<DriverHomePage> {
       }
     } catch (e) {
       log('Heartbeat failed: $e', name: 'driver_app');
+    }
+  }
+
+  Future<void> _updateDriverStatus(String newStatus) async {
+    final id = _driverIdValue();
+    if (id.isEmpty) return;
+
+    try {
+      final provider = Provider.of<DriverProvider>(context, listen: false);
+      final previousStatus = provider.status.isNotEmpty
+          ? provider.status
+          : (_driverStatus.isNotEmpty ? _driverStatus : '');
+      provider.updateStatus(newStatus);
+      if (mounted) {
+        setState(() => _driverStatus = newStatus);
+      }
+
+      final uri = Uri.parse('$backendBaseUrl/api/drivers/$id/status');
+      final response = await http
+          .patch(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'status': newStatus}),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode != 200) {
+        provider.updateStatus(previousStatus);
+        if (mounted) {
+          setState(() => _driverStatus = previousStatus);
+        }
+        log(
+          'Driver status update failed with status ${response.statusCode}: ${response.body}',
+          name: 'driver_app',
+        );
+      }
+    } catch (e) {
+      log('Driver status update exception: $e', name: 'driver_app');
     }
   }
 
@@ -365,6 +413,8 @@ class _DriverHomePageState extends State<DriverHomePage> {
   Future<void> _handleTripAccept({
     required double pickupLat,
     required double pickupLng,
+    required double destinationLat,
+    required double destinationLng,
     String? tripId,
   }) async {
     if (_position == null) {
@@ -403,7 +453,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
         );
       }
 
+      _activeTripId = tripId;
       log('Trip $tripId updated to ongoing', name: 'driver_app');
+
+      await _updateDriverStatus('GOING_TO_PICKUP');
 
       final uri = Uri.parse(
         'https://router.project-osrm.org/route/v1/driving/${_position!.longitude},${_position!.latitude};$pickupLng,$pickupLat?overview=full&geometries=geojson',
@@ -437,22 +490,25 @@ class _DriverHomePageState extends State<DriverHomePage> {
       if (!mounted) return;
       setState(() {
         _routePoints = points;
-        _destinationPoint = LatLng(pickupLat, pickupLng);
+        _pickupPoint = LatLng(pickupLat, pickupLng);
+        _destinationPoint = destinationLat != null && destinationLng != null
+            ? LatLng(destinationLat, destinationLng)
+            : null;
         _statusMessage = 'Đã nhận chuyến và vẽ tuyến đường tới điểm đón';
       });
 
-      if (points.isNotEmpty) {
-        final latSum = points.fold<double>(
-          0,
-          (sum, point) => sum + point.latitude,
-        );
-        final lngSum = points.fold<double>(
-          0,
-          (sum, point) => sum + point.longitude,
-        );
-        final center = LatLng(latSum / points.length, lngSum / points.length);
-        _mapController.move(center, 13);
-      }
+      // if (points.isNotEmpty) {
+      //   final latSum = points.fold<double>(
+      //     0,
+      //     (sum, point) => sum + point.latitude,
+      //   );
+      //   final lngSum = points.fold<double>(
+      //     0,
+      //     (sum, point) => sum + point.longitude,
+      //   );
+      //   final center = LatLng(latSum / points.length, lngSum / points.length);
+      //   _mapController.move(center, 13);
+      //}
     } catch (e) {
       log('Route calculation failed: $e', name: 'driver_app');
       if (!mounted) return;
@@ -461,6 +517,212 @@ class _DriverHomePageState extends State<DriverHomePage> {
     } finally {
       if (mounted) setState(() => _routing = false);
     }
+  }
+
+  Future<void> _startTrip() async {
+    log(' Starting trip', name: 'driver_app');
+
+    if (_activeTripId == null || _activeTripId!.isEmpty) {
+      _showSnack('Không có chuyến đang chờ bắt đầu.');
+      return;
+    }
+
+    if (_routing) return;
+
+    setState(() {
+      _routing = true;
+      _statusMessage = 'Đang bắt đầu chuyến...';
+    });
+    try {
+      await _updateDriverStatus('ON_TRIP');
+      final uri = Uri.parse('$backendBaseUrl/api/trips/$_activeTripId');
+      final response = await http
+          .put(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'status': 'ON_TRIP'}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        try {
+          log(' Starting route calculation to destination', name: 'driver_app');
+
+          final uri = Uri.parse(
+            'https://router.project-osrm.org/route/v1/driving/${_pickupPoint!.longitude},${_pickupPoint!.latitude};${_destinationPoint!.longitude},${_destinationPoint!.latitude}?overview=full&geometries=geojson',
+          );
+          final response = await http
+              .get(uri)
+              .timeout(const Duration(seconds: 15));
+          if (!mounted) return;
+
+          if (response.statusCode != 200) {
+            throw Exception(
+              'Routing failed with status ${response.statusCode}: ${response.body}',
+            );
+          }
+
+          final body = jsonDecode(response.body) as Map<String, dynamic>;
+          final routes = body['routes'] as List<dynamic>?;
+          if (routes == null || routes.isEmpty) {
+            throw Exception('No route found');
+          }
+
+          final geometry = routes.first as Map<String, dynamic>?;
+          final coords =
+              geometry?['geometry']?['coordinates'] as List<dynamic>?;
+          if (coords == null || coords.isEmpty) {
+            throw Exception('Route geometry is empty');
+          }
+
+          final points = coords.map<LatLng>((item) {
+            final coord = item as List<dynamic>;
+            return LatLng(coord[1] as double, coord[0] as double);
+          }).toList();
+
+          if (!mounted) return;
+          setState(() {
+            _routePoints = points;
+            _statusMessage = 'Đã nhận chuyến và vẽ tuyến đường tới điểm đón';
+          });
+
+          // if (points.isNotEmpty) {
+          //   final latSum = points.fold<double>(
+          //     0,
+          //     (sum, point) => sum + point.latitude,
+          //   );
+          //   final lngSum = points.fold<double>(
+          //     0,
+          //     (sum, point) => sum + point.longitude,
+          //   );
+          //   final center = LatLng(
+          //     latSum / points.length,
+          //     lngSum / points.length,
+          //   );
+          //   _mapController.move(center, 13);
+          // }
+        } catch (e) {
+          log('Route calculation failed: $e', name: 'driver_app');
+          if (!mounted) return;
+          setState(() => _statusMessage = 'Không thể tạo tuyến: $e');
+          _showSnack('Không thể tạo tuyến: $e');
+        } finally {
+          if (mounted) setState(() => _routing = false);
+        }
+      } else {
+        setState(
+          () => _statusMessage =
+              'Không thể bắt đầu chuyến: ${response.statusCode}',
+        );
+      }
+      setState(() => _statusMessage = 'Đã bắt đầu chuyến');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Không thể bắt đầu chuyến: $e');
+    }
+  }
+
+  void _resetTripMapState() {
+    if (!mounted) return;
+    setState(() {
+      _routePoints = <LatLng>[];
+      _pickupPoint = null;
+      _destinationPoint = null;
+      _activeTripId = null;
+      _statusMessage = 'Đã hoàn tất chuyến và reset bản đồ';
+    });
+
+    if (_position != null) {
+      _mapController.move(
+        LatLng(_position!.latitude, _position!.longitude),
+        16,
+      );
+    }
+  }
+
+  Future<void> _completeTrip() async {
+    if (_activeTripId == null || _activeTripId!.isEmpty) {
+      _showSnack('Không có chuyến đang chạy để hoàn tất.');
+      return;
+    }
+
+    setState(() => _statusMessage = 'Đang hoàn tất chuyến...');
+    try {
+      await _updateDriverStatus('AVAILABLE');
+      final uri = Uri.parse('$backendBaseUrl/api/trips/$_activeTripId');
+      final response = await http
+          .put(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'status': 'COMPLETED'}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _resetTripMapState();
+      } else {
+        setState(
+          () => _statusMessage =
+              'Không thể hoàn tất chuyến: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Không thể hoàn tất chuyến: $e');
+    }
+  }
+
+  Future<void> _cancelTrip() async {
+    if (_activeTripId == null || _activeTripId!.isEmpty) {
+      _showSnack('Không có chuyến đang chạy để hủy.');
+      return;
+    }
+
+    setState(() => _statusMessage = 'Đang hủy chuyến...');
+    try {
+      await _updateDriverStatus('AVAILABLE');
+      final uri = Uri.parse('$backendBaseUrl/api/trips/$_activeTripId');
+      final response = await http
+          .put(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'status': 'CANCELLED'}),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        _resetTripMapState();
+      } else {
+        setState(
+          () => _statusMessage = 'Không thể hủy chuyến: ${response.statusCode}',
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _statusMessage = 'Không thể hủy chuyến: $e');
+    }
+  }
+
+  bool _showStartButton() {
+    final status = _driverStatusValue().toUpperCase();
+    return _activeTripId != null &&
+        (status == 'GOING_TO_PICKUP' || status == 'ACCEPT');
+  }
+
+  bool _showDoneButton() {
+    final status = _driverStatusValue().toUpperCase();
+    return _activeTripId != null && status == 'ON_TRIP';
+  }
+
+  bool _showCancelButton() {
+    final status = _driverStatusValue().toUpperCase();
+    return _activeTripId != null &&
+        (status == 'GOING_TO_PICKUP' ||
+            status == 'ACCEPT' ||
+            status == 'ON_TRIP');
   }
 
   @override
@@ -490,10 +752,10 @@ class _DriverHomePageState extends State<DriverHomePage> {
         ),
       );
     }
-    if (_destinationPoint != null) {
+    if (_pickupPoint != null) {
       markers.add(
         Marker(
-          point: _destinationPoint!,
+          point: _pickupPoint!,
           width: 56,
           height: 56,
           child: const Icon(Icons.flag, color: Colors.green, size: 40),
@@ -504,7 +766,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          'Driver - ${_driverNameValue()}${_driverStatusValue().isNotEmpty ? ' - ${_driverStatusValue()}' : ''}',
+          '${_driverNameValue()}${_driverStatusValue().isNotEmpty ? ' - ${_driverStatusValue()}' : ''}',
         ),
         actions: [
           IconButton(
@@ -559,23 +821,28 @@ class _DriverHomePageState extends State<DriverHomePage> {
                   children: [
                     Text(
                       _position != null
-                          ? 'Lat: ${_position!.latitude.toStringAsFixed(6)}'
+                          ? 'Current Location - Lat: ${_position!.latitude.toStringAsFixed(6)} Lng: ${_position!.longitude.toStringAsFixed(6)}'
                           : 'Lat: -',
                     ),
                     Text(
-                      _position != null
-                          ? 'Lng: ${_position!.longitude.toStringAsFixed(6)}'
-                          : 'Lng: -',
+                      _pickupPoint != null
+                          ? 'Pickup - Lat: ${_pickupPoint!.latitude.toStringAsFixed(6)} Lng: ${_pickupPoint!.longitude.toStringAsFixed(6)}'
+                          : 'Pickup - Lat: - Lng: -',
+                    ),
+                    Text(
+                      _destinationPoint != null
+                          ? 'Destination - Lat: ${_destinationPoint!.latitude.toStringAsFixed(6)} Lng: ${_destinationPoint!.longitude.toStringAsFixed(6)}'
+                          : 'Destination - Lat: - Lng: -',
                     ),
                     const SizedBox(height: 6),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        _address.isNotEmpty ? _address : 'Address: -',
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
+                    // SizedBox(
+                    //   width: double.infinity,
+                    //   child: Text(
+                    //     _address.isNotEmpty ? _address : 'Address: -',
+                    //     maxLines: 3,
+                    //     overflow: TextOverflow.ellipsis,
+                    //   ),
+                    // ),
                     if (_statusMessage != null) ...[
                       const SizedBox(height: 6),
                       Text(
@@ -597,19 +864,43 @@ class _DriverHomePageState extends State<DriverHomePage> {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FloatingActionButton.extended(
-            onPressed: _loading ? null : _determinePosition,
-            icon: const Icon(Icons.gps_fixed),
-            label: Text(_loading ? 'Locating...' : 'Get GPS'),
-          ),
+          if (_showStartButton()) ...[
+            FloatingActionButton.extended(
+              onPressed: _loading ? null : _startTrip,
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Start'),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (_showDoneButton()) ...[
+            FloatingActionButton.extended(
+              onPressed: _loading ? null : _completeTrip,
+              icon: const Icon(Icons.done_all),
+              label: const Text('Done'),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (_showCancelButton()) ...[
+            FloatingActionButton.extended(
+              onPressed: _loading ? null : _cancelTrip,
+              icon: const Icon(Icons.gps_fixed),
+              label: Text('Hủy chuyến'),
+            ),
+          ],
           const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            onPressed: _position == null || _sendingLocation
-                ? null
-                : _sendLocation,
-            icon: const Icon(Icons.send),
-            label: Text(_sendingLocation ? 'Sending...' : 'Send location'),
-          ),
+          // FloatingActionButton.extended(
+          //   onPressed: _loading ? null : _determinePosition,
+          //   icon: const Icon(Icons.gps_fixed),
+          //   label: Text(_loading ? 'Locating...' : 'Get GPS'),
+          // ),
+          // const SizedBox(height: 12),
+          // FloatingActionButton.extended(
+          //   onPressed: _position == null || _sendingLocation
+          //       ? null
+          //       : _sendLocation,
+          //   icon: const Icon(Icons.send),
+          //   label: Text(_sendingLocation ? 'Sending...' : 'Send location'),
+          // ),
         ],
       ),
     );
@@ -689,7 +980,7 @@ class _DriverHomePageState extends State<DriverHomePage> {
                 final lng = item['lng'];
                 return ListTile(
                   title: Text(name.toString()),
-                  subtitle: Text('Phone: $phone\nLat: $lat, Lng: $lng'),
+                  subtitle: Text('Phone: $phone\nLat1: $lat, Lng:1 $lng'),
                 );
               },
             ),

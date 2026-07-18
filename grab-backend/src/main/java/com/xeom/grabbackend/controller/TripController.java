@@ -138,6 +138,8 @@ public class TripController {
                         data.put("customerId", saved.getCustomerId());
                         data.put("lat", String.valueOf(saved.getLatitudeStart()));
                         data.put("lng", String.valueOf(saved.getLongitudeStart()));
+                        data.put("latD", String.valueOf(saved.getLatitudeEnd()));
+                        data.put("lngD", String.valueOf(saved.getLongitudeEnd()));
                        // data.put("lat", "37.42132786690192");
                         //data.put("lng", "-122.1361437329108");
                         // 37.42132786690192, -122.1361437329108

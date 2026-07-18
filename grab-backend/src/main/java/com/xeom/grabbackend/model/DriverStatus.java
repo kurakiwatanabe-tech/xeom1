@@ -2,6 +2,7 @@ package com.xeom.grabbackend.model;
 
 import java.util.Arrays;
 import java.util.Locale;
+import java.util.Set;
 
 public enum DriverStatus {
     OFFLINE,
@@ -40,7 +41,12 @@ public enum DriverStatus {
         };
     }
     public static boolean isValid(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String normalized = text.trim().toUpperCase(Locale.ROOT);
         return Arrays.stream(DriverStatus.values())
-                     .anyMatch(e -> e.name().equalsIgnoreCase(text)); // Case-insensitive
+                .anyMatch(e -> e.name().equals(normalized))
+                || Set.of("REQUESTED", "ONGOING", "COMPLETED", "CANCELLED").contains(normalized);
     }
 }
